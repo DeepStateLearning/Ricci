@@ -9,8 +9,8 @@ import timeit
 n= 9
 k = 4
 l = 4
-runs = 1000   #how many iterations
-show = 50		#how frequently we show the result
+runs = 10000   #how many iterations
+show = 1000		#how frequently we show the result
 eta = 0.0002	# factor of Ricci that is added to distance squared
 rescale='L1'	#'min' rescales the distance squared function so minimum is 1.   'L1' rescales it so the sum of distance squared stays the same (perhaps this is a misgnomer and it should be 'L2' but whatever)
 t = 0.1 # should not be integer to avaoid division problems
@@ -217,18 +217,15 @@ def metricize(dist):  #Only minimizes over two-stop paths not all
 	olddist = dist+1
 	d_ij = dist
 	different  = (olddist==dist).all()
-	print different
-	print not different
 	while(not different):
-		print 'in loop'
+		#rint 'in loop'
 		olddist=dist
 		for i in range(len(dist)):
 			for j in range(len(dist)):
 				for k in range(len(dist)):
 					dijk = dist[i,k]+dist[k,j]
-					d_ij[i,j] = np.amin([d_ij,dijk])
+					d_ij[i,j] = np.amin([d_ij[i,j],dijk])
 				dist[i,j]=d_ij[i,j]
-		print dist
 		different  = (olddist==dist).all()
 	return dist**2
 			
@@ -236,21 +233,11 @@ def metricize(dist):  #Only minimizes over two-stop paths not all
 	
 	
 dist = onedimensionpair(2,3,noise)
-dist = cyclegraph(6,0)
+dist = cyclegraph(6,noise)
 #dist = closefarsimplices(n, 0.1, 1)
 
 
-dist[0,4]=45
-
-dist = dist+dist.transpose()
-dist = dist/2
-print dist
-
-
 dist = metricize(dist)
-
-print dist
-quit()
 L = computeLaplaceMatrix2(dist, t)
 Ricci = coarseRicci3(L, dist)
 
