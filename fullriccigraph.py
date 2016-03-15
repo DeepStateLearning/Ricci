@@ -9,12 +9,12 @@ import timeit
 n= 9
 k = 4
 l = 4
-runs = 800   #how many iterations
-show = 100		#how frequently we show the result
-eta = 0.0005	# factor of Ricci that is added to distance squared
-rescale='min'	#'min' rescales the distance squared function so minimum is 1.   'L1' rescales it so the sum of distance squared stays the same (perhaps this is a misgnomer and it should be 'L2' but whatever)
+runs = 100000   #how many iterations
+show = 10000		#how frequently we show the result
+eta = 0.0002	# factor of Ricci that is added to distance squared
+rescale='L1'	#'min' rescales the distance squared function so minimum is 1.   'L1' rescales it so the sum of distance squared stays the same (perhaps this is a misgnomer and it should be 'L2' but whatever)
 t = 0.1 # should not be integer to avaoid division problems
-noise = 0.2 # noise coefficient
+noise = 0.00 # noise coefficient
 CLIP = 60   #value at which we clip distance function
 # treat some numpy warnings as errors
 np.seterr(all="print")  # divide='raise', invalid='raise')
@@ -215,7 +215,7 @@ def closefarsimplices(n, noise, separation):  #returns distance squared.  Object
 	
 	
 dist = onedimensionpair(2,3,.3)
-dist = cyclegraph(6,0.1)
+dist = cyclegraph(6,noise)
 #dist = closefarsimplices(n, 0.1, 1)
 
 
@@ -235,7 +235,7 @@ ne.evaluate("dist-eta*Ricci", out=dist)
 
 initial_L1 = dist.sum()
 
-for i in range(runs):
+for i in range(runs+show+3):
     L = computeLaplaceMatrix2(dist, t)
     Ricci = coarseRicci3(L, dist)
     ne.evaluate("dist-eta*Ricci", out=dist)
@@ -252,7 +252,7 @@ for i in range(runs):
     #ne.evaluate("dist/s", out=dist)
 	
     dist = np.clip(dist,0, CLIP)
-    if rescale=='L1' :ne.evaluate("dist/s2", out=dist)
+    if rescale=='L1' :ne.evaluate("initial_L1*dist/s2", out=dist)
     if rescale=='min':ne.evaluate("dist/s1", out=dist)
     if i % show == 2:
         # print Ricci
