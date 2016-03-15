@@ -6,12 +6,21 @@ from scipy.misc import logsumexp
 from numba import jit, vectorize
 import timeit
 
-n = 3
-t = 0.1  # should not be integer to avaoid division problems
-noise = 0.1  # expansion coefficient
+n= 9
+k = 4
+l = 4
+runs = 800   #how many iterations
+show = 100		#how frequently we show the result
+eta = 0.0005	# factor of Ricci that is added to distance squared
+rescale='min'	#'min' rescales the distance squared function so minimum is 1.   'L1' rescales it so the sum of distance squared stays the same (perhaps this is a misgnomer and it should be 'L2' but whatever)
+t = 0.1 # should not be integer to avaoid division problems
+noise = 0.2 # noise coefficient
+CLIP = 60   #value at which we clip distance function
 # treat some numpy warnings as errors
 np.seterr(all="print")  # divide='raise', invalid='raise')
 
+
+#Note dist is always the distance squared matrix.  
 
 @jit("void(f8[:,:], f8)", nopython=True, nogil=True)
 def symmetric(A, sigma):
@@ -56,7 +65,7 @@ def computeLaplaceMatrix2(dMatrix, t):
     To compute L_t f just multiply L_t by vector f.
     """
     lt = np.log(2/t)
-    L = dMatrix*dMatrix
+    L =np.sqrt( dMatrix*dMatrix)
     L /= -2.0*t
     # numpy floating point errors likely below
     logdensity = logsumexp(L, axis=1)
@@ -93,6 +102,23 @@ def coarseRicci(L, dMatrix):
         Ric[i, :] = cdc[i]/2.0
     return Ric
 
+
+def CDC1(L,f,g):
+    u=f*g
+    cdc = L.dot(u)-f*L.dot(g)-g*L.dot(f)
+    return cdc/2
+
+
+def coarseRicciold(L,dMatrix):  #for test purposes.   Tested - and it at least for simple examples the Ricci's are all the same.   
+    Ric = np.zeros((len(dMatrix),len(dMatrix)))
+    for i in range(len(L)):
+        for j in range(len(L)):
+            f_ij = dMatrix[:,i]-dMatrix[:,j]#pay close attention to this if it becomes asymmetric
+            cdc1 = CDC1(L, f_ij,f_ij)
+            cdc2 = L.dot(cdc1)-2*CDC1(L,f_ij,L.dot(f_ij))
+            Ric[i,j]=cdc2[i]/2
+		
+    return Ric
 
 def coarseRicci3(L, dMatrix):
     """
@@ -152,44 +178,67 @@ def test(f, args_string):
     print min(t)
 
 
-eta = .0001
-dist = np.zeros((2*n, 2*n))
-symmetric(dist, eta)
-# FIXME why is dist matrix -1 on diagonal?
+#This sections provides some simple test sets 
+
+def onedimensionpair(k,l,sigma):  #k,l are sizes of points.  sigma is about how far away points in the same cluster are.  Sigma must be positive
+	X = np.random.normal(size = (k,1))
+	Y = np.random.normal(size = (l,1))+ 2/sigma
+	Z = np.concatenate((X,Y))
+	#print X
+	#print Y
+	print Z
+	n = len(Z)
+	dist = np.zeros((n, n))
+	for i in range(n):
+		for j in range(n):
+			dist[i,j]=(Z[i]-Z[j])*(Z[i]-Z[j])
+	dist = sigma*dist
+	return dist
+	
+
+def cyclegraph(n, noise):  #returns distance squared for cyclical graph with n points, with noise added
+	dist = np.zeros((n, n))
+	ndist = np.zeros((n, n))
+	for i in range(n):
+		for j in range(n):
+			dist[i,j]=np.amin([(i-j)%n,(j-i)%n])
+			ndist[i,j]=dist[i,j]*noise*np.random.randn(1)
+	dist = dist*dist
+	dist = dist+ndist+ndist.transpose()
+	return dist
+
+def closefarsimplices(n, noise, separation):  #returns distance squared.  Object is a pair of simplices with distance separation from each other, and internal distance 1.  Add some noise. 
+	dist = np.zeros((2*n, 2*n))
+	symmetric(dist, noise)  ## This isn't quite the object we want FIXME 
+	return dist
+
+	
+	
+dist = onedimensionpair(2,3,.3)
+dist = cyclegraph(6,0.1)
+#dist = closefarsimplices(n, 0.1, 1)
 
 
-print computeLaplaceMatrix2(dist, t)
-test(computeLaplaceMatrix2, "dist, t")
-
-exit(0)
 L = computeLaplaceMatrix2(dist, t)
-
-print "test Ricci, next line should be 0"
-print np.max(np.abs(coarseRicci(L, dist)-coarseRicci3(L, dist)))
-test(coarseRicci, "L, dist")
-test(coarseRicci3, "L, dist")
-
-exit(0)
-
 Ricci = coarseRicci3(L, dist)
-print Ricci
 
 
-total_distance0 = dist.sum()
 
 
 print 'initial distance'
 print dist
-ne.evaluate("dist-eta*Ricci", out=dist)
-print 'new dist'
-print dist
-c = 1
+print 'initial Ricci'
+print Ricci
 
-for i in range(5):
+
+ne.evaluate("dist-eta*Ricci", out=dist)
+
+initial_L1 = dist.sum()
+
+for i in range(runs):
     L = computeLaplaceMatrix2(dist, t)
     Ricci = coarseRicci3(L, dist)
     ne.evaluate("dist-eta*Ricci", out=dist)
-    print dist
     dist = ne.evaluate("(dist + distT)/2",
                        global_dict={'distT': dist.transpose()})
 
@@ -197,11 +246,19 @@ for i in range(5):
     # dist = (total_distance0/total_distance)*dist
     nonzero = dist[np.nonzero(dist)]
     mindist = np.amin(nonzero)
-    t = mindist
-    # print t
-    ne.evaluate("dist/t", out=dist)
-    if i % 900 == 2:
+    s1 = mindist
+    s2 = dist.sum()
+    #print t
+    #ne.evaluate("dist/s", out=dist)
+	
+    dist = np.clip(dist,0, CLIP)
+    if rescale=='L1' :ne.evaluate("dist/s2", out=dist)
+    if rescale=='min':ne.evaluate("dist/s1", out=dist)
+    if i % show == 2:
         # print Ricci
+        print "dist for ", i, "  time"
         print dist
-        # print Ricci/dist
+        print 't = ', t
+        #print Ricci
+        #print Ricci/dist, '<- Ricc/dist'
         print '---------'
