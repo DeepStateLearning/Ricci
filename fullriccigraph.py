@@ -9,12 +9,12 @@ import timeit
 n= 9
 k = 4
 l = 4
-runs = 100000   #how many iterations
-show = 10000		#how frequently we show the result
+runs = 1000   #how many iterations
+show = 50		#how frequently we show the result
 eta = 0.0002	# factor of Ricci that is added to distance squared
 rescale='L1'	#'min' rescales the distance squared function so minimum is 1.   'L1' rescales it so the sum of distance squared stays the same (perhaps this is a misgnomer and it should be 'L2' but whatever)
 t = 0.1 # should not be integer to avaoid division problems
-noise = 0.00 # noise coefficient
+noise = 0.2 # noise coefficient
 CLIP = 60   #value at which we clip distance function
 # treat some numpy warnings as errors
 np.seterr(all="print")  # divide='raise', invalid='raise')
@@ -212,17 +212,47 @@ def closefarsimplices(n, noise, separation):  #returns distance squared.  Object
 	symmetric(dist, noise)  ## This isn't quite the object we want FIXME 
 	return dist
 
+def metricize(dist):  #Only minimizes over two-stop paths not all 
+	dist = np.sqrt(dist)
+	olddist = dist+1
+	d_ij = dist
+	different  = (olddist==dist).all()
+	print different
+	print not different
+	while(not different):
+		print 'in loop'
+		olddist=dist
+		for i in range(len(dist)):
+			for j in range(len(dist)):
+				for k in range(len(dist)):
+					dijk = dist[i,k]+dist[k,j]
+					d_ij[i,j] = np.amin([d_ij,dijk])
+				dist[i,j]=d_ij[i,j]
+		print dist
+		different  = (olddist==dist).all()
+	return dist**2
+			
+				
 	
 	
-dist = onedimensionpair(2,3,.3)
-dist = cyclegraph(6,noise)
+dist = onedimensionpair(2,3,noise)
+dist = cyclegraph(6,0)
 #dist = closefarsimplices(n, 0.1, 1)
 
 
+dist[0,4]=45
+
+dist = dist+dist.transpose()
+dist = dist/2
+print dist
+
+
+dist = metricize(dist)
+
+print dist
+quit()
 L = computeLaplaceMatrix2(dist, t)
 Ricci = coarseRicci3(L, dist)
-
-
 
 
 print 'initial distance'
@@ -254,10 +284,11 @@ for i in range(runs+show+3):
     dist = np.clip(dist,0, CLIP)
     if rescale=='L1' :ne.evaluate("initial_L1*dist/s2", out=dist)
     if rescale=='min':ne.evaluate("dist/s1", out=dist)
+    dist = metricize(dist)
     if i % show == 2:
         # print Ricci
         print "dist for ", i, "  time"
-        print dist
+        print  dist
         print 't = ', t
         #print Ricci
         #print Ricci/dist, '<- Ricc/dist'
