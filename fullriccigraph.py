@@ -46,7 +46,7 @@ def logsumexp(a):
     return log(np.sum(exp(a-m[:, None]), axis=1)) + m
 
 
-def computeLaplaceMatrix2(dMatrix, t, logeps=mp.mpfr("-10")):
+def computeLaplaceMatrix3(dMatrix, t, logeps=mp.mpfr("-10")):
     """
     Compute heat approximation to Laplacian matrix using logarithms.
 
@@ -156,12 +156,12 @@ dist = np.zeros((2*n, 2*n))
 symmetric(dist, eta)
 
 
-print computeLaplaceMatrix2(dist, t)
+print computeLaplaceMatrix3(dist, t)
 
-test(computeLaplaceMatrix2, "dist, t")
+test(computeLaplaceMatrix3, "dist, t")
 
 exit(0)
-L, _ = computeLaplaceMatrix2(dist, t)
+L, _ = computeLaplaceMatrix3(dist, t)
 
 print "test Ricci, next line should be 0"
 print np.max(np.abs(coarseRicci(L, dist)-coarseRicci3(L, dist)))
@@ -185,7 +185,7 @@ print dist
 c = 1
 
 for i in range(5):
-    L = computeLaplaceMatrix2(dist, t)
+    L = computeLaplaceMatrix3(dist, t)
     Ricci = coarseRicci3(L, dist)
     ne.evaluate("dist-eta*Ricci", out=dist)
     print dist
