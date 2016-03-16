@@ -2,6 +2,7 @@
 """ Coarse Ricci flow for a point cloud. """
 import numpy as np
 import numexpr as ne
+import scipy.misc as sm
 from numba import jit  # , vectorize
 import timeit
 
@@ -103,7 +104,7 @@ def computeLaplaceMatrix2(dMatrix, t, logeps=mp.mpfr("-10")):
     L = np.sqrt(dMatrix * dMatrix)
     L /= -2.0 * t
     # numpy floating point errors likely below
-    logdensity = logsumexp(L, axis=1)
+    logdensity = sm.logsumexp(L, axis=1)
     # logdensity = logaddexp.reduce(np.sort(L, axis=1), axis=1)
     # compute log(density-1):
     # np.log(np.expm1(logdensity))
