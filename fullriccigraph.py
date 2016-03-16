@@ -2,11 +2,19 @@
 """ Coarse Ricci flow for a point cloud. """
 import numpy as np
 import numexpr as ne
-from scipy.misc import logsumexp
-from numba import jit, vectorize
+from numba import jit  # , vectorize
 import timeit
 
-n = 3
+import gmpy2 as mp
+mp.get_context().precision = 200
+exp = np.frompyfunc(mp.exp, 1, 1)
+expm1 = np.frompyfunc(mp.expm1, 1, 1)
+log = np.frompyfunc(mp.log, 1, 1)
+is_finite = np.frompyfunc(mp.is_finite, 1, 1)
+to_mpfr = np.frompyfunc(mp.mpfr, 1, 1)
+to_double = np.frompyfunc(float, 1, 1)
+
+n = 500
 t = 0.1  # should not be integer to avaoid division problems
 noise = 0.1  # expansion coefficient
 # treat some numpy warnings as errors
@@ -30,49 +38,40 @@ def symmetric(A, sigma):
     for i in range(n):
         for j in range(n):
             A[i, j+n] = A[j+n, i] = 4*A[i, j] + np.random.normal(1.0, sigma)
-        # matrix diagonal adjusted last
-        # A[i, i] = A[i+n, i+n] = -1.0
 
 
-@vectorize("f8(f8, f8)")
-def logaddexp(a, b):
-    """ Vectorized logaddexp. """
-    if a < b:
-        return np.log1p(np.exp(a-b)) + b
-    elif a > b:
-        return np.log1p(np.exp(b-a)) + a
-    else:
-        return np.log(2.0) + a
+def logsumexp(a):
+    """ mpfr compatible minimal logsumexp version. """
+    m = np.max(a, axis=1)
+    return log(np.sum(exp(a-m[:, None]), axis=1)) + m
 
 
-def computeLaplaceMatrix2(dMatrix, t):
+def computeLaplaceMatrix2(dMatrix, t, logeps=mp.mpfr("-10")):
     """
     Compute heat approximation to Laplacian matrix using logarithms.
 
-    This is slightly slower, but hopefully more accurate.
+    Use gmpy2 mpfr to gain more precision.
 
-    No numexpr to catch numpy floating point errors.
+    This is slow, but more accurate.
 
-    To compute L_t f just multiply L_t by vector f.
+    Cutoff for really small values, and row elimination if degenerate.
     """
-    lt = np.log(2/t)
-    L = dMatrix*dMatrix
-    L /= -2.0*t
-    # numpy floating point errors likely below
-    logdensity = logsumexp(L, axis=1)
-    # logdensity = logaddexp.reduce(np.sort(L, axis=1), axis=1)
-    # compute log(density-1):
-    # np.log(np.expm1(logdensity))
-    # logdensity + np.log1p(-exp(logdensity))
+    # cutoff ufunc
+    cutoff = np.frompyfunc((lambda x: mp.inf(-1) if x < logeps else x), 1, 1)
 
-    # sum in rows must be 1
-    L = np.exp(L - logdensity[:, None] + lt)
-    # fix diagonal to account for -f(x)?
-    # L_t matrix is the unajusted one - scaled identity
-    L[np.diag_indices(len(L))] -= 2.0/t
-    # alternatively L_t could be computed using unadjusted matrix
-    # applied to f - f at point
-    return L
+    t2 = mp.mpfr(t)
+    lt = mp.log(2 / t2)
+    d = to_mpfr(dMatrix)
+    L = d*d
+    L /= -2 * t2
+    cutoff(L, out=L)
+    logdensity = logsumexp(L)
+    L = exp(L - logdensity[:, None] + lt)
+    L[np.diag_indices(len(L))] -= 2 / t2
+    L = np.array(to_double(L), dtype=float)
+    # if just one nonzero element, then erase row and column
+    degenerate = np.sum(L != 0.0, axis=1) <= 1
+    return L, degenerate
 
 
 def coarseRicci(L, dMatrix):
@@ -155,14 +154,14 @@ def test(f, args_string):
 eta = .0001
 dist = np.zeros((2*n, 2*n))
 symmetric(dist, eta)
-# FIXME why is dist matrix -1 on diagonal?
 
 
 print computeLaplaceMatrix2(dist, t)
+
 test(computeLaplaceMatrix2, "dist, t")
 
 exit(0)
-L = computeLaplaceMatrix2(dist, t)
+L, _ = computeLaplaceMatrix2(dist, t)
 
 print "test Ricci, next line should be 0"
 print np.max(np.abs(coarseRicci(L, dist)-coarseRicci3(L, dist)))
