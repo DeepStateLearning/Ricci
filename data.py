@@ -33,7 +33,7 @@ def onedimensionpair(k, l, sigma):
     # print X
     # print Y
     print Z
-    dist = ne.evaluate("(Z - ZT)**2", global_dict={'ZT': Z[:, None]})
+    dist = ne.evaluate("(Z - ZT)**2", global_dict={'ZT': Z.transpose()})
     # for i in range(n):
     #    for j in range(n):
     #         dist[i, j] = (Z[i] - Z[j]) * (Z[i] - Z[j])
