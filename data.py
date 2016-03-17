@@ -32,7 +32,6 @@ def onedimensionpair(k, l, sigma):
     Z = np.concatenate((X, Y))
     # print X
     # print Y
-    print Z
     dist = ne.evaluate("(Z - ZT)**2", global_dict={'ZT': Z.transpose()})
     # for i in range(n):
     #    for j in range(n):
@@ -66,5 +65,12 @@ def closefarsimplices(n, noise, separation):
     separation - distance between simplices.
     """
     dist = np.zeros((2 * n, 2 * n))
-    symmetric_gen(dist, noise, separation)  # This isn't quite the object we want FIXME
+    symmetric_gen(dist, noise, separation)
     return dist
+
+
+def small_tests():
+    """ Generate a few small data sets for testing. """
+    yield onedimensionpair(3, 2, 0.1)
+    yield cyclegraph(5, 0.1)
+    yield closefarsimplices(3, 0.1, 5)

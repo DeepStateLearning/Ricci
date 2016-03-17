@@ -4,14 +4,10 @@ import timeit
 import numpy as np
 
 
-def test(f, args_string):
+def test_speed(f, *args):
     """ Test the speed of a function. """
-    print f.__name__
-    t = timeit.repeat("%s(%s)" % (f.__name__, args_string),
-                      repeat=5, number=1,
-                      setup="from __main__ import %s, %s" % (f.__name__,
-                                                             args_string))
-    print min(t)
+    t = timeit.repeat(lambda: f(*args), repeat=5, number=1)
+    print 'Fastest out of 5: {} s'.format(min(t))
 
 
 def metricize(dist):
