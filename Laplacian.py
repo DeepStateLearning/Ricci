@@ -31,14 +31,12 @@ def computeLaplaceMatrix(sqdist, t, logeps=mp.mpfr("-10")):
     Cutoff for really small values, and row/column elimination if degenerate.
     """
     # cutoff ufunc
-    cutoff = np.frompyfunc((lambda x: mp.inf(-1) if x < logeps else x), 1, 1)
+    cutoff = np.frompyfunc((lambda x, le: mp.inf(-1) if x < le else x), 2, 1)
 
     t2 = mp.mpfr(t)
     lt = mp.log(2 / t2)
-    d = to_mpfr(sqdist)
-    L = d * d
-    L /= -2 * t2
-    cutoff(L, out=L)
+    L = to_mpfr(sqdist) / (-2 * t2)
+    cutoff(L, logeps, out=L)
     logdensity = logsumexp(L)
     L = exp(L - logdensity[:, None] + lt)
     L[np.diag_indices(len(L))] -= 2 / t2
@@ -69,3 +67,67 @@ def computeLaplaceMatrix2(sqdist, t):
 
 # currently best method
 Laplacian = computeLaplaceMatrix2
+
+#
+# tests based on computeLaplaceMatrix2
+#
+import unittest
+
+
+class LaplaceTests (unittest.TestCase):
+
+    """ Correctness and speed tests. """
+
+    def test_small(self):
+        """ Test correctness on small data sets. """
+        import data
+        threshold = 1E-10
+        print
+        for d in data.small_tests():
+            # compare without cutoff
+            L1 = computeLaplaceMatrix(d, 0.1, logeps=mp.inf(-1))
+            L2 = computeLaplaceMatrix2(d, 0.1)
+            error = np.max(np.abs(L1-L2))
+            print "Absolute error: ", error
+            self.assertLess(error, threshold)
+
+    def row_sums(self, f):
+        """ Test if rows add up to 0. """
+        import data
+        threshold = 1E-10
+        print
+        for d in data.small_tests():
+            error = np.max(np.abs(np.sum(f(d, 0.1), axis=1)))
+            print "Absolute error: ", error
+            self.assertLess(error, threshold)
+
+    def test_rows_numpy(self):
+        """ Check sums of rows with numpy. """
+        self.row_sums(computeLaplaceMatrix2)
+
+    def test_rows_gmpy2(self):
+        """ Check sums of rows with gmpy2. """
+        self.row_sums(computeLaplaceMatrix)
+
+    def speed(self, f):
+        """ Test speed on larger data sets. """
+        import data
+        from tools import test_speed
+        d = data.closefarsimplices(200, 0.1, 5)
+        print "\nPoints: 200"
+        test_speed(f, d, 0.1)
+        d = data.closefarsimplices(400, 0.1, 5)
+        print "Points: 400"
+        test_speed(f, d, 0.1)
+
+    def test_speed_numpy(self):
+        """ Speed with numpy. """
+        self.speed(computeLaplaceMatrix2)
+
+    def test_speed_gmpy2(self):
+        """ Speed with gmpy2. """
+        self.speed(computeLaplaceMatrix)
+
+if __name__ == "__main__":
+    suite = unittest.TestLoader().loadTestsFromTestCase(LaplaceTests)
+    unittest.TextTestRunner(verbosity=2).run(suite)
