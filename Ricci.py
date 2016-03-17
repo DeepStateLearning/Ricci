@@ -95,6 +95,9 @@ class RicciTests (unittest.TestCase):
 
     def small(self, f):
         """ Test correctness on small data sets. """
+        import data
+        from Laplacian import Laplacian
+        threshold = 1E-10
         print
         for d in data.small_tests():
             L = Laplacian(d, 0.1)
@@ -104,14 +107,17 @@ class RicciTests (unittest.TestCase):
 
     def speed(self, f):
         """ Test speed on larger data sets. """
+        import data
+        from Laplacian import Laplacian
+        from tools import test_speed
         d = data.closefarsimplices(100, 0.1, 5)
         L = Laplacian(d, 0.1)
         print "\nPoints: 200"
-        test_speed(coarseRicci2, L, d)
+        test_speed(f, L, d)
         d = data.closefarsimplices(200, 0.1, 5)
         L = Laplacian(d, 0.1)
         print "Points: 400"
-        test_speed(coarseRicci2, L, d)
+        test_speed(f, L, d)
 
     def test_Ricci2(self):
         self.small(coarseRicci2)
@@ -126,9 +132,5 @@ class RicciTests (unittest.TestCase):
         self.speed(coarseRicci3)
 
 if __name__ == "__main__":
-    import data
-    threshold = 1E-10
-    from tools import test_speed
-    from Laplacian import Laplacian
     suite = unittest.TestLoader().loadTestsFromTestCase(RicciTests)
     unittest.TextTestRunner(verbosity=2).run(suite)
