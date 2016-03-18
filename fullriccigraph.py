@@ -25,9 +25,9 @@ from Laplacian import Laplacian
 from Ricci import coarseRicci
 
 
-sqdist = data.onedimensionpair(2, 3, noise)
+# sqdist = data.onedimensionpair(2, 3, noise)
 # sqdist = data.cyclegraph(6, noise)
-# sqdist = data.closefarsimplices(3, 0.1, 3)
+sqdist = data.closefarsimplices(3, 0.1, 3)
 
 sqdist = metricize(sqdist)
 L = Laplacian(sqdist, t)
@@ -66,7 +66,7 @@ for i in range(runs + show + 3):
         ne.evaluate("sqdist/s1", out=sqdist)
     dist = metricize(sqdist)
     if i % show == 2:
-        # print Ricci
+        print Ricci
         print "sqdist for ", i, "  time"
         print sqdist
         print 't = ', t
