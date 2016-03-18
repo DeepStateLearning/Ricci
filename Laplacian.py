@@ -22,7 +22,6 @@ def computeLaplaceMatrix2(sqdist, t):
 
 try:
     # gmpy2 setup for numpy object arrays
-    assert(False)
     import gmpy2 as mp
     mp.get_context().precision = 200
     _exp = np.frompyfunc(mp.exp, 1, 1)

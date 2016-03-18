@@ -120,15 +120,19 @@ class RicciTests (unittest.TestCase):
         test_speed(f, L, d)
 
     def test_Ricci2(self):
+        """ Correctness of Ricci2. """
         self.small(coarseRicci2)
 
     def test_Ricci3(self):
+        """ Correctness of Ricci3. """
         self.small(coarseRicci3)
 
     def test_speed_Ricci2(self):
+        """ Speed of Ricci2. """
         self.speed(coarseRicci2)
 
     def test_speed_Ricci3(self):
+        """ Speed of Ricci3. """
         self.speed(coarseRicci3)
 
 if __name__ == "__main__":
