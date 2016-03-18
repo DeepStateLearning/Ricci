@@ -4,7 +4,6 @@ import numpy as np
 import numexpr as ne
 
 # TODO
-#   add tests
 #   single threaded Ricci row computation parallelized with respect to rows
 
 
@@ -83,3 +82,59 @@ def coarseRicci3(L, sqdist):
 
 # currently best method
 coarseRicci = coarseRicci3
+
+#
+# tests based on old Ricci
+#
+import unittest
+
+
+class RicciTests (unittest.TestCase):
+
+    """ Correctness and speed tests. """
+
+    def small(self, f):
+        """ Test correctness on small data sets. """
+        import data
+        from Laplacian import Laplacian
+        threshold = 1E-10
+        print
+        for d in data.small_tests():
+            L = Laplacian(d, 0.1)
+            error = np.max(np.abs(f(L, d)-coarseRicciold(L, d)))
+            print "Absolute error: ", error
+            self.assertLess(error, threshold)
+
+    def speed(self, f):
+        """ Test speed on larger data sets. """
+        import data
+        from Laplacian import Laplacian
+        from tools import test_speed
+        d = data.closefarsimplices(100, 0.1, 5)
+        L = Laplacian(d, 0.1)
+        print "\nPoints: 200"
+        test_speed(f, L, d)
+        d = data.closefarsimplices(200, 0.1, 5)
+        L = Laplacian(d, 0.1)
+        print "Points: 400"
+        test_speed(f, L, d)
+
+    def test_Ricci2(self):
+        """ Correctness of Ricci2. """
+        self.small(coarseRicci2)
+
+    def test_Ricci3(self):
+        """ Correctness of Ricci3. """
+        self.small(coarseRicci3)
+
+    def test_speed_Ricci2(self):
+        """ Speed of Ricci2. """
+        self.speed(coarseRicci2)
+
+    def test_speed_Ricci3(self):
+        """ Speed of Ricci3. """
+        self.speed(coarseRicci3)
+
+if __name__ == "__main__":
+    suite = unittest.TestLoader().loadTestsFromTestCase(RicciTests)
+    unittest.TextTestRunner(verbosity=2).run(suite)

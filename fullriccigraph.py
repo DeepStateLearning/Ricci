@@ -66,7 +66,7 @@ for i in range(runs + show + 3):
         ne.evaluate("sqdist/s1", out=sqdist)
     dist = metricize(sqdist)
     if i % show == 2:
-        # print Ricci
+        print Ricci
         print "sqdist for ", i, "  time"
         print sqdist
         print 't = ', t
