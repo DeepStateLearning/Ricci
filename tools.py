@@ -17,6 +17,8 @@ def metricize(dist):
     """
     Metricize a matrix of "squared distances".
 
+    Modifies the array in-place.
+
     Only minimizes over two-stop paths not all.
     """
     ne.evaluate("sqrt(dist)", out=dist)
@@ -30,7 +32,6 @@ def metricize(dist):
             error += np.sum(dist[i, :] - new[i, :])
         dist[:, :] = new
     ne.evaluate('dist**2', out=dist)
-    return dist
 
 
 def parallel(num, numthreads=8):
