@@ -119,3 +119,19 @@ def is_metric(sqdist, eps=1E-10):
         if np.any(temp):
             return False
     return True
+	
+def is_clustered(sqdist,threshold):   
+	"""Check if the metric is cluster.   If the relations d(x,y)<threshold partitions the point set, returns True"""
+	n = len(sqdist)
+	partition = (sqdist<threshold)
+	print partition
+	for i in range(n):
+		setpart=partition[i,:]
+		for j in range(i,n):
+			if (partition[i,:]*partition[j,:]).any()==True:
+				if not np.array_equal(partition[i,:],partition[j,:]) : return False
+	print 'clustered!!'
+	
+	return True
+	
+	

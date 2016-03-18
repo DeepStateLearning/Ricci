@@ -7,9 +7,11 @@ np.seterr(all="print")  # divide='raise', invalid='raise')
 #
 #   simulation parameters
 #
-runs = 10000  # how many iterations
+runs = 100000  # how many iterations
 show = 1000  # how frequently we show the result
-eta = 0.0002  # factor of Ricci that is added to distance squared
+eta = 0.0005  # factor of Ricci that is added to distance squared
+threshold = 0.15 #clustering threshold
+upperthreshold = 1.5 # won't try to cluster if distances in ambiguity interva (threshold, upperthreshold)
 # 'min' rescales the distance squared function so minimum is 1.
 # 'L1' rescales it so the sum of distance squared stays the same
 #   (perhaps this is a misgnomer and it should be 'L2' but whatever)
@@ -18,9 +20,12 @@ t = 0.1  # should not be integer to avaoid division problems
 noise = 0.2  # noise coefficient
 CLIP = 60  # value at which we clip distance function
 
+np.set_printoptions(precision=2,suppress = True)
+
 
 import data
 from tools import metricize
+from tools import is_clustered
 from Laplacian import Laplacian
 from Ricci import coarseRicci
 
@@ -29,7 +34,7 @@ from Ricci import coarseRicci
 # sqdist = data.cyclegraph(6, noise)
 #sqdist = data.closefarsimplices(3, 0.1, 3)
 
-sqdist, pointset = data.twodimensionpair(5, 5, noise)
+sqdist, pointset = data.twodimensionpair(15, 12, noise)
 twodim=True
 
 metricize(sqdist)
@@ -40,6 +45,16 @@ print 'initial distance'
 print sqdist
 print 'initial Ricci'
 print Ricci
+
+
+Joe = (sqdist>threshold)&(sqdist<upperthreshold)
+print Joe
+print (sqdist<upperthreshold)
+
+print (sqdist>threshold)
+
+print Joe.any()
+print Joe.all()
 
 
 ne.evaluate("sqdist-eta*Ricci", out=sqdist)
@@ -76,6 +91,11 @@ for i in range(runs + show + 3):
         # print Ricci
         # print Ricci/dist, '<- Ricc/dist'
         print '---------'
+        if ((sqdist>threshold)&(sqdist<upperthreshold)).any():
+            print 'values still in ambiguous interval'
+            continue
+        if is_clustered(sqdist,threshold):break
+		
 
 if twodim:
 	
