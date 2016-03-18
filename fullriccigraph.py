@@ -11,7 +11,7 @@ runs = 100000  # how many iterations
 show = 1000  # how frequently we show the result
 eta = 0.0002 # factor of Ricci that is added to distance squared
 threshold = 0.15 #clustering threshold
-upperthreshold = 1.5 # won't try to cluster if distances in ambiguity interva (threshold, upperthreshold)
+upperthreshold = 1.1 # won't try to cluster if distances in ambiguity interva (threshold, upperthreshold)
 # 'min' rescales the distance squared function so minimum is 1.
 # 'L1' rescales it so the sum of distance squared stays the same
 #   (perhaps this is a misgnomer and it should be 'L2' but whatever)
@@ -34,7 +34,7 @@ from Ricci import coarseRicci
 # sqdist = data.cyclegraph(6, noise)
 #sqdist = data.closefarsimplices(3, 0.1, 3)
 
-sqdist, pointset = data.twodimensionpair(25, 32, noise)
+sqdist, pointset = data.twodimensionpair(15, 10, noise)
 twodim=True
 
 metricize(sqdist)

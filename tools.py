@@ -131,6 +131,9 @@ def is_clustered(sqdist,threshold):
 			if (partition[i,:]*partition[j,:]).any()==True:
 				if not np.array_equal(partition[i,:],partition[j,:]) : return False
 	print 'clustered!!'
+	np.savetxt("clust.csv", partition,fmt = "%5i", delimiter=",")
+	print 'saved to cust.csv'
+	
 	
 	return True
 	
