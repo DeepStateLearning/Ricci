@@ -9,7 +9,7 @@ np.seterr(all="print")  # divide='raise', invalid='raise')
 #
 runs = 100000  # how many iterations
 show = 1000  # how frequently we show the result
-eta = 0.0005  # factor of Ricci that is added to distance squared
+eta = 0.0002 # factor of Ricci that is added to distance squared
 threshold = 0.15 #clustering threshold
 upperthreshold = 1.5 # won't try to cluster if distances in ambiguity interva (threshold, upperthreshold)
 # 'min' rescales the distance squared function so minimum is 1.
@@ -17,7 +17,7 @@ upperthreshold = 1.5 # won't try to cluster if distances in ambiguity interva (t
 #   (perhaps this is a misgnomer and it should be 'L2' but whatever)
 rescale = 'L1'
 t = 0.1  # should not be integer to avaoid division problems
-noise = 0.2  # noise coefficient
+noise = 0.4 # noise coefficient
 CLIP = 60  # value at which we clip distance function
 
 np.set_printoptions(precision=2,suppress = True)
@@ -34,7 +34,7 @@ from Ricci import coarseRicci
 # sqdist = data.cyclegraph(6, noise)
 #sqdist = data.closefarsimplices(3, 0.1, 3)
 
-sqdist, pointset = data.twodimensionpair(15, 12, noise)
+sqdist, pointset = data.twodimensionpair(25, 32, noise)
 twodim=True
 
 metricize(sqdist)
@@ -45,16 +45,6 @@ print 'initial distance'
 print sqdist
 print 'initial Ricci'
 print Ricci
-
-
-Joe = (sqdist>threshold)&(sqdist<upperthreshold)
-print Joe
-print (sqdist<upperthreshold)
-
-print (sqdist>threshold)
-
-print Joe.any()
-print Joe.all()
 
 
 ne.evaluate("sqdist-eta*Ricci", out=sqdist)
