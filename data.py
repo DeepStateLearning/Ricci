@@ -40,6 +40,26 @@ def onedimensionpair(k, l, sigma):
     return dist
 
 
+def twodimensionpair(k,l,sigma):  #k,l are sizes of points.  sigma is about how far away points in the same cluster are.  Sigma must be positive. Also returns point set for later display
+	X = np.random.normal(size = (k,2))
+	Y = np.random.normal(size = (l,2))+ [2/sigma,0]
+	Z = np.concatenate((X,Y))
+	#print X
+	#print Y
+	#print Z
+	print type(Z)
+	print Z
+	n = len(Z)
+	R = Z[Z[:,0].argsort()]
+	Z = R
+	print Z
+	dist = np.zeros((n, n))
+	for i in range(n):
+		for j in range(n):
+			dist[i,j]=(Z[i,0]-Z[j,0])*(Z[i,0]-Z[j,0])+(Z[i,1]-Z[j,1])*(Z[i,1]-Z[j,1])
+	dist = sigma*dist
+	return dist,Z
+
 def cyclegraph(n, noise):
     """
     Return squared distances for cuclic graph with n points.

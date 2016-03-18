@@ -27,7 +27,10 @@ from Ricci import coarseRicci
 
 # sqdist = data.onedimensionpair(2, 3, noise)
 # sqdist = data.cyclegraph(6, noise)
-sqdist = data.closefarsimplices(3, 0.1, 3)
+#sqdist = data.closefarsimplices(3, 0.1, 3)
+
+sqdist, pointset = data.twodimensionpair(5, 5, noise)
+twodim=True
 
 metricize(sqdist)
 L = Laplacian(sqdist, t)
@@ -73,3 +76,10 @@ for i in range(runs + show + 3):
         # print Ricci
         # print Ricci/dist, '<- Ricc/dist'
         print '---------'
+
+if twodim:
+	
+	import matplotlib.pyplot as plt
+	plt.scatter(pointset[:,0], pointset[:,1])
+	plt.axis('equal')
+	plt.show()
