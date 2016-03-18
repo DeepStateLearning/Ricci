@@ -29,7 +29,7 @@ from Ricci import coarseRicci
 # sqdist = data.cyclegraph(6, noise)
 sqdist = data.closefarsimplices(3, 0.1, 3)
 
-sqdist = metricize(sqdist)
+metricize(sqdist)
 L = Laplacian(sqdist, t)
 Ricci = coarseRicci(L, sqdist)
 
@@ -64,7 +64,7 @@ for i in range(runs + show + 3):
         ne.evaluate("initial_L1*sqdist/s2", out=sqdist)
     if rescale == 'min':
         ne.evaluate("sqdist/s1", out=sqdist)
-    dist = metricize(sqdist)
+    metricize(sqdist)
     if i % show == 2:
         print Ricci
         print "sqdist for ", i, "  time"
