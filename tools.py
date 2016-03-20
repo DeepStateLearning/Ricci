@@ -138,3 +138,16 @@ def is_clustered(sqdist,threshold):
 	return True
 	
 	
+def color_clusters(sqdist,threshold):
+	"""Assuming the metric is clustered, return a colored array"""
+	
+	n = len(sqdist)
+	partition = (sqdist<threshold)
+	clust=np.zeros(n)
+	for i in range(n):
+		for j in range(n):
+			if partition[i,j]:
+				clust[i]=j
+				break
+	return clust
+				
