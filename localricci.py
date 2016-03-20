@@ -1,6 +1,11 @@
 """ Coarse Ricci flow for a point cloud. """
 import numpy as np
 import numexpr as ne
+
+
+from sklearn import cluster, datasets
+
+
 # treat some numpy warnings as errors?
 np.seterr(all="print")  # divide='raise', invalid='raise')
 
@@ -8,10 +13,10 @@ np.seterr(all="print")  # divide='raise', invalid='raise')
 #   simulation parameters
 #
 runs = 100000  # how many iterations
-show = 1000  # how frequently we show the result
-eta = 0.0002 # factor of Ricci that is added to distance squared
+show = 10  # how frequently we show the result
+eta = 0.0075 # factor of Ricci that is added to distance squared
 threshold = 0.15 #clustering threshold
-upperthreshold = 1.1 # won't try to cluster if distances in ambiguity interva (threshold, upperthreshold)
+upperthreshold = .65 # won't try to cluster if distances in ambiguity interva (threshold, upperthreshold)
 # 'min' rescales the distance squared function so minimum is 1.
 # 'L1' rescales it so the sum of distance squared stays the same
 #   (perhaps this is a misgnomer and it should be 'L2' but whatever)
@@ -34,8 +39,22 @@ from Ricci import coarseRicci
 # sqdist = data.cyclegraph(6, noise)
 #sqdist = data.closefarsimplices(3, 0.1, 3)
 
-sqdist, pointset = data.twodimensionpair(15, 10, noise)
+
+#sqdist, pointset = data.twodimensionpair(35, 25, noise)
 twodim=True
+
+n_samples = 300
+pointset,Zcolors = datasets.make_circles(n_samples=n_samples, factor=.5,noise=.01)
+Z = pointset
+print Z
+n=len(Z)
+sqdist = np.zeros((n, n))
+
+for i in range(n):
+    for j in range(n):
+        sqdist[i,j]=(Z[i,0]-Z[j,0])*(Z[i,0]-Z[j,0])+(Z[i,1]-Z[j,1])*(Z[i,1]-Z[j,1])
+
+    
 
 metricize(sqdist)
 L = Laplacian(sqdist, t)
@@ -50,11 +69,14 @@ print Ricci
 ne.evaluate("sqdist-eta*Ricci", out=sqdist)
 
 initial_L1 = sqdist.sum()
+loosekernel = eta*np.exp(-sqdist) # This will modify Ricci locally more than far away. 
+ 
 
 for i in range(runs + show + 3):
+
     L = Laplacian(sqdist, t)
     Ricci = coarseRicci(L, sqdist)
-    ne.evaluate("sqdist-eta*Ricci", out=sqdist)
+    ne.evaluate("sqdist-loosekernel*Ricci", out=sqdist)  # changes closer points now
     sqdist = ne.evaluate("(sqdist + sqdistT)/2",
                          global_dict={'sqdistT': sqdist.transpose()})
 
@@ -88,8 +110,9 @@ for i in range(runs + show + 3):
 		
 
 if twodim:
-	
+	np.savetxt('Zcolors.csv',Zcolors)
 	import matplotlib.pyplot as plt
 	plt.scatter(pointset[:,0], pointset[:,1])
 	plt.axis('equal')
 	plt.show()
+	
