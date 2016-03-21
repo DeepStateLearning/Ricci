@@ -1,0 +1,151 @@
+\documentclass[12pt]{amsart}
+\title{Optimal Ricci matrix computations.}
+\begin{document}
+\maketitle
+
+\section{Notation}
+\label{sec:Notation}
+
+Throughout the paper we use $\times$ to denote pointwise multiplication. Consequently, we also use $f^{\times2}$ to denote pointwise powers. We also assume that operators are represented by matrices and functions are column vectors. 
+
+We will use $M_i$ to denote a row of a matrix, and $M_{:i}$ to denote its column.
+
+Suppose $r$ is a row vector, $c$ is a column vector and $M$ is a matrix. We can perform pointwise operations between objects not having the same size. For example $c+M$ should be understood as the column is first promoted to a square matrix with the same column repeated. The same way we can promote a row to a matrix, or a number to any shape. Note that such extension of $+$ and $-$ preserves distributive property of matrix multiplication. We can also apply the promotion to pointwise multiplication $\times$.
+
+We will exploit the following property:
+\begin{align}\label{property}
+    r(M\times c)&=(r\times c^T)M, \qquad r\text{ can be a matrix}\\
+    (r\times M)c &= M(c\times r^T), \qquad c\text{ can be a matrix}.
+\end{align}
+Note that $r\times c^T$ gives a row vector, while $r\times c$ would give a matrix (both $r$ and $c$ would be promoted first).
+
+\section{Initial computations}
+We start with
+\begin{align*}
+    \Gamma(L, f, h) = \frac{1}{2} \left(L(f\times h) - f\times Lh-h\times Lf\right),
+\end{align*}
+which is a column vector.
+We are interested in
+\begin{align}
+    \Gamma_2(L, f, f) &= \frac{1}{2}L\Gamma(L, f, f) - \Gamma(L, Lf, f)=\cdots=\nonumber
+    \\&=\frac{1}{4} L^2f^{\times2}-L(f\times Lf)+\frac{1}{2}f\times L^2f+\frac{1}{2}(Lf)^{\times2}.\label{Gamma2}
+\end{align}
+
+We have a squared distance matrix $D$ (size $n\times x$), Laplace matrix $L$, and a set of functions $f$, one for each entry of $D$ (pair of points).
+
+We have $f^{(i,j)}=D_{:i}-D_{:,j}$. We take a difference of two columns. Hence we have $n^2$ functions with $n$ entries each. This makes it hard to store all of them.
+
+Each function $f^{(i,j)}$ is used to find one entry $R_{i,j}$ in the Ricci matrix:
+\begin{align*}
+    R_{i,j} = \Gamma_2(L, f^{(i,j)}, f^{(i,j)})_{i}.
+\end{align*}
+We take $i$-th row from a column vector $\Gamma_2(\ldots)$.
+\section{One row in Ricci matrix}
+\label{sec:RowInRicci}
+We will try to compute the whole row of the Ricci matrix at once.
+
+We define the functions matrix $F(i)=D_{:i}-D$.  Then $F(i)$ encodes all functions $f^{(i,\cdot)}$ as its columns.
+
+We can use $F(i)$ in place of $f$ in the formula \eqref{Gamma2} for $\Gamma_2$. We get 
+\begin{align*}
+    R_{i} = \left(\frac{1}{4} L^2F(i)^{\times2}-L(F(i)\times LF(i))+\frac{1}{2}F(i)\times L^2F(i)+\frac{1}{2}(LF(i))^{\times2}\right)_{i}.
+\end{align*}
+Since we are computing just one row, we can do that in each term. To further simplify the notation we drop $(i)$ from $F$.
+
+Note that for matrices $(A \times B)_i = A_i\times B_i$ and $(AB)_i = A_i B$. Hence
+\begin{align}\label{RicciRow}
+    R_{i} = \frac{1}{4} (L^2)_i F^{\times2}-L_i(F\times LF)+\frac{1}{2}F_i\times (L^2)_iF+\frac{1}{2}(LF)^{\times2}_i.
+\end{align}
+
+First note that
+\begin{align*}
+LF = L(D_{:i}-D)=(LD)_{:i}-LD.
+\end{align*}
+
+We can precompute a few matrix products independent of $i$:
+\begin{align*}
+    A&=L^2,\\
+    B&=LD,\\
+    C&=AD.
+\end{align*}
+\textbf{Note that $B$ and $C$ are not symmetric, since products of symmetric matrices generally are not symmetric.}
+
+Now we will look at each term in \eqref{RicciRow}. The last term is the simplest:
+\begin{align*}
+    (LF)^{\times2}_i&=(B_{:i}-B)^{\times2}_i=(B_{ii}-B_i)^{\times2}
+    \\&=
+    (B^{\times2})_i+(B^{\times2})_{ii}-2B_i\times B_{ii}.
+\end{align*}
+Hence it can be computed as row$\times$row operation.
+
+    The first term can also be simplified:
+    \begin{align*}
+	(L^2)_i F^{\times2} &= A_i(D^{\times2}+D^{\times2}_{:i}-2D\times D_{:i})
+			\\&=
+			A_iD^{\times2}+A_i(D^{\times2})_{:i} -2 A_i (D\times D_{:i})
+			\\&=
+			(A D^{\times2})_i+(A D^{\times2})_{ii} -2 (A\times D)_iD,
+    \end{align*}
+    In the last step we used symmetry of $D$ and \eqref{property}. For nonsymmetric matrix column $D_{:,i}$ would simply need to be transposed instead of changing to $D_i$. 
+    Next we have
+    \begin{align*}
+	F_i\times (L^2)_iF &= (D_{ii}-D_i)\times [A_i (D_{:i}-D)] 
+	\\&=
+	(D_{ii}-D_i)\times ((AD)_{ii}-(AD)_i)
+	\\&=
+	(D_{ii}-D_i)\times (C_{ii}-C_i)
+	\\&=
+	(D\times C)_i + (D\times C)_{ii} - D_i\times C_{ii},
+    \end{align*}
+    since $D_{ii}=0$.
+    Finally
+    \begin{align*}
+	L_i(F\times LF)&=L_i((D_{:i}-D) \times (B_{:i}-B)) =
+	\\&=
+	L_i\left(D\times B+(D\times B)_{:i}-D\times B_{:i}-B\times D_{:i}\right)=
+	\\&=
+	G_i+G_{ii}-(L_i\times (B^T)_i)D-(L_i\times D_i)B
+	\\&=
+	G_i+G_{ii}-(L\times B^T)_{i}D-(L\times D)_iB,
+    \end{align*}
+    where $G=L(D\times B)$. 
+
+    To make our notation even more compact we let $diag(M)$ be a column vector composed of the diagonal elements of $M$. Then
+    \begin{align*}
+	\overline M = M + diag(M)
+    \end{align*}
+satisfies 
+\begin{align*}
+\overline M_i = M_i+M_{ii}.
+\end{align*}
+With this notation we can represent a row of Ricci matrix (given by \eqref{RicciRow}) as
+\begin{align*}
+    R_i &= \frac{1}{4}\left( \overline{AD^{\times2}} \right)_i -  \frac{1}{2}(A\times D)_i D 
+    \\&
+    -\left( \overline{L(D\times B)} \right)_i +(L\times B^T)_iD +(L\times D)_i B
+    \\&
+    + \frac{1}{2}\left(  \overline{D\times C}\right)_i - \frac{1}{2}D_i\times C_{ii}
+    \\&
+    + \frac{1}{2}\left(\overline{ B^{\times2}}\right)_i - B_i\times B_{ii}.
+\end{align*}
+
+\section{Full Ricci matrix}
+Note that the formula for the row of the Ricci matrix contains only take a row operations for various matrices. We can also combine all overline operations. Hence
+
+\begin{align*}
+    R &= \overline{\frac{1}{4}AD^{\times2} -L(D\times B) +\frac{1}{2}D\times C + \frac{1}{2}B^{\times2}}
+    \\&
+    +\left((L\times B^T)-  \frac{1}{2}(A\times D)\right)D +(L\times D) B
+     \\&
+     - \frac{1}{2}D\times diag(C) - B\times diag(B),
+\end{align*}
+with $A=L^2$, $B=LD$ and $C=AD$, a $diag$ denoting a column vector composed of the diagonal of a matrix.
+
+\section{Order of computations}
+\label{sec:OrderOfComputations}
+
+We want to minimize the number of multiplications while keeping memory requirement small. It seems that 7 matrix multiplications and 3 extra matrices are enough. Although it should be possible to bring this down to 2 extra matrices.
+
+
+
+\end{document}
