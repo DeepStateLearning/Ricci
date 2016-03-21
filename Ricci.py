@@ -24,6 +24,8 @@ def applyRicci(sqdist, eta, Ricci, mode='sym'):
     Apply coarse Ricci to a squared distance matrix.
 
     Can handle symmetric, max, and nonsymmetric modes.
+
+    Note: eta can be a localizing kernel too.
     """
     if 'sym' in mode:
         ne.evaluate('sqdist + (eta/2)*(Ricci+RicciT)',
