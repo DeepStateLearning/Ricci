@@ -2,28 +2,59 @@
 
 import numpy as np
 import numexpr as ne
-
-# TODO
-#   single threaded Ricci row computation parallelized with respect to rows
+import scipy.linalg as sl
 
 
-def coarseRicci2(L, sqdist):
-    """ numexpr parallelized Ricci. """
-    Ric = np.zeros_like(sqdist)
-    for i in xrange(len(L)):
-        # now f_i and cdc are matrices
-        f_i = ne.evaluate("ci-sqdist",
-                          global_dict={'ci': sqdist[:, i, None]})
-        # first CDC
-        cdc = L.dot(ne.evaluate("f_i*f_i"))
-        Lf = L.dot(f_i)
-        # end of CDC1 combined with CDC2
-        ne.evaluate("cdc/2.0-2.0*f_i*Lf", out=cdc)
-        cdc = L.dot(cdc)
-        ne.evaluate("cdc+f_i*LLf+Lf*Lf",
-                    global_dict={'LLf': L.dot(Lf)}, out=cdc)
-        Ric[i, :] = cdc[i] / 2.0
-    return Ric
+def add_AB_to_C(A, B, C):
+    """
+    Compute C += AB in-place.
+
+    This uses gemm from whatever BLAS is available.
+    MKL requires Fortran ordered arrays to avoid copies.
+    Hence we work with transpositions of default c-style arrays.
+    """
+    gemm = sl.get_blas_funcs("gemm", (A, B, C))
+    assert np.isfortran(C.T) and np.isfortran(A.T) and np.isfortran(B.T)
+    D = gemm(1.0, B.T, A.T, beta=1, c=C.T, overwrite_c=1)
+    assert D.base is C
+
+
+def applyRicci(sqdist, eta, Ricci, mode='sym'):
+    """
+    Apply coarse Ricci to a squared distance matrix.
+
+    Can handle symmetric, max, and nonsymmetric modes.
+
+    Note: eta can be a localizing kernel too.
+    """
+    if 'sym' in mode:
+        ne.evaluate('sqdist + (eta/2)*(Ricci+RicciT)',
+                    global_dict={'RicciT': Ricci.T}, out=sqdist)
+    elif 'max' in mode:
+        ne.evaluate('sqdist + eta*where(Ricci<RicciT, RicciT, Ricci)',
+                    global_dict={'RicciT': Ricci.T}, out=sqdist)
+    else:
+        ne.evaluate('sqdist + eta*Ricci',
+                    global_dict={'RicciT': Ricci.T}, out=sqdist)
+
+
+# def coarseRicci2(L, sqdist):
+#     """ numexpr parallelized Ricci. """
+#     Ric = np.zeros_like(sqdist)
+#     for i in xrange(len(L)):
+#         # now f_i and cdc are matrices
+#         f_i = ne.evaluate("ci-sqdist",
+#                           global_dict={'ci': sqdist[:, i, None]})
+#         # first CDC
+#         cdc = L.dot(ne.evaluate("f_i*f_i"))
+#         Lf = L.dot(f_i)
+#         # end of CDC1 combined with CDC2
+#         ne.evaluate("cdc/2.0-2.0*f_i*Lf", out=cdc)
+#         cdc = L.dot(cdc)
+#         ne.evaluate("cdc+f_i*LLf+Lf*Lf",
+#                     global_dict={'LLf': L.dot(Lf)}, out=cdc)
+#         Ric[i, :] = cdc[i] / 2.0
+#     return Ric
 
 
 def CDC1(L, f, g):
@@ -80,6 +111,40 @@ def coarseRicci3(L, sqdist):
     return Ric
 
 
+def coarseRicci4(L, sqdist):
+    """
+    Fully optimized Ricci matrix computation.
+
+    Requires 7 matrix multiplications and many entrywise operations.
+    We only use 3 temporary matrices.
+
+    Uses full gemm functionality to avoid creating intermediate matrices.
+
+    Running time is O(n^3) as opposed to other implementations' O(n^4).
+    """
+    D = sqdist
+    C = ne.evaluate("D*D/4.0")
+    A = L.dot(L)
+    R = A.dot(C)
+    B = L.dot(D)
+    ne.evaluate("-D*B", out=C)
+    add_AB_to_C(L, C, R)
+    L.dot(B, out=C)
+    ne.evaluate("R+0.5*(D*C+B*B)", out=R)
+    # Now R contains everything under overline
+    ne.evaluate("R+dR-0.5*dC*D-dB*B",
+                global_dict={'dC': np.diag(C).copy()[:, None],
+                             'dB': np.diag(B).copy()[:, None],
+                             'dR': np.diag(R).copy()[:, None]}, out=R)
+    # Now R contains all but two matrix product from line 2
+    ne.evaluate("L*BT-0.5*A*D", global_dict={'BT': B.T}, out=C)
+    add_AB_to_C(C, D, R)
+    ne.evaluate("L*D", out=C)
+    add_AB_to_C(C, B, R)
+    # done!
+    np.fill_diagonal(R, 0.0)
+    return R
+
 # currently best method
 coarseRicci = coarseRicci3
 
@@ -93,47 +158,52 @@ class RicciTests (unittest.TestCase):
 
     """ Correctness and speed tests. """
 
-    def small(self, f):
+    def small(self, f, size='small', default=None):
         """ Test correctness on small data sets. """
         import data
         from Laplacian import Laplacian
         threshold = 1E-10
+        if default is None:
+            default = coarseRicciold
         print
-        for d in data.small_tests():
+        for d in data.tests(size):
             L = Laplacian(d, 0.1)
-            error = np.max(np.abs(f(L, d)-coarseRicciold(L, d)))
+            error = np.amax(np.abs(f(L, d)-default(L, d)))
             print "Absolute error: ", error
             self.assertLess(error, threshold)
 
-    def speed(self, f):
+    def speed(self, f, points=[100, 200]):
         """ Test speed on larger data sets. """
         import data
         from Laplacian import Laplacian
         from tools import test_speed
-        d = data.closefarsimplices(100, 0.1, 5)
-        L = Laplacian(d, 0.1)
-        print "\nPoints: 200"
-        test_speed(f, L, d)
-        d = data.closefarsimplices(200, 0.1, 5)
-        L = Laplacian(d, 0.1)
-        print "Points: 400"
-        test_speed(f, L, d)
-
-    def test_Ricci2(self):
-        """ Correctness of Ricci2. """
-        self.small(coarseRicci2)
+        for p in points:
+            d = data.closefarsimplices(p, 0.1, 5)
+            print "\nPoints: {}".format(2*p)
+            test_speed(Laplacian, d, 0.1)
+            L = Laplacian(d, 0.1)
+            test_speed(f, L, d)
 
     def test_Ricci3(self):
-        """ Correctness of Ricci3. """
+        """ Ricci3 compared to old mathematical Ricci. """
         self.small(coarseRicci3)
 
-    def test_speed_Ricci2(self):
-        """ Speed of Ricci2. """
-        self.speed(coarseRicci2)
+    def test_Ricci4(self):
+        """ Ricci4 compared to old mathematical Ricci. """
+        self.small(coarseRicci4)
+
+    def test_Ricci4large(self):
+        """ Ricci4 compared to Ricci3 on larger data. """
+        self.small(coarseRicci4, size='large', default=coarseRicci3)
 
     def test_speed_Ricci3(self):
         """ Speed of Ricci3. """
         self.speed(coarseRicci3)
+
+    def test_speed_Ricci4(self):
+        """ Speed of Ricci4. """
+        self.speed(coarseRicci4)
+        self.speed(coarseRicci4, points=[500, 1000])
 
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(RicciTests)

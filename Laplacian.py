@@ -89,7 +89,7 @@ class LaplaceTests (unittest.TestCase):
         import data
         threshold = 1E-10
         print
-        for d in data.small_tests():
+        for d in data.tests('small'):
             # compare without cutoff
             L1 = computeLaplaceMatrix(d, 0.1, logeps=mp.inf(-1))
             L2 = computeLaplaceMatrix2(d, 0.1)

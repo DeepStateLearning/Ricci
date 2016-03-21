@@ -89,8 +89,10 @@ def closefarsimplices(n, noise, separation):
     return dist
 
 
-def small_tests():
-    """ Generate a few small data sets for testing. """
-    yield onedimensionpair(3, 2, 0.1)
-    yield cyclegraph(5, 0.1)
-    yield closefarsimplices(3, 0.1, 5)
+def tests(size='small'):
+    """ Generate a few data sets for testing. """
+    if size == 'small':
+        return [onedimensionpair(3, 2, 0.1), cyclegraph(5, 0.1),
+                closefarsimplices(3, 0.1, 5)]
+    else:
+        return [closefarsimplices(50, 0.1, 5), closefarsimplices(100, 0.1, 5)]
