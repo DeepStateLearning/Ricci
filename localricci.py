@@ -26,18 +26,13 @@ CLIP = 60  # value at which we clip distance function
 
 np.set_printoptions(precision=2, suppress=True)
 
-# import data
-from tools import metricize, is_clustered
+from tools import sanitize, is_clustered
 from Laplacian import Laplacian
 from Ricci import coarseRicci, applyRicci
 
 
-# sqdist = data.onedimensionpair(2, 3, noise)
-# sqdist = data.cyclegraph(6, noise)
-# sqdist = data.closefarsimplices(3, 0.1, 3)
-
-
-# sqdist, pointset = data.twodimensionpair(35, 25, noise)
+# import data
+# sqdist, pointset = data.two_clusters(35, 25, 2, dim=2)
 twodim = True
 
 n_samples = 300
@@ -46,7 +41,7 @@ pointset, Zcolors = datasets.make_circles(n_samples=n_samples, factor=.5,
 sqdist = cdist(pointset, pointset, 'sqeuclidean')
 print pointset
 
-metricize(sqdist)
+sanitize(sqdist)
 L = Laplacian(sqdist, t)
 Ricci = coarseRicci(L, sqdist)
 
@@ -68,19 +63,11 @@ for i in range(runs + show + 3):
 
     # total_distance = sqdist.sum()
     # sqdist = (total_distance0/total_distance)*sqdist
-    nonzero = sqdist[np.nonzero(sqdist)]
-    mindist = np.amin(nonzero)
-    s1 = mindist
-    s2 = sqdist.sum()
     # print t
     # ne.evaluate("dist/s", out=dist)
 
-    sqdist = np.clip(sqdist, 0, CLIP)
-    if rescale == 'L1':
-        ne.evaluate("initial_L1*sqdist/s2", out=sqdist)
-    if rescale == 'min':
-        ne.evaluate("sqdist/s1", out=sqdist)
-    metricize(sqdist)
+    sanitize(sqdist, CLIP, initial_L1)
+
     if i % show == 2:
         print Ricci
         print "sqdist for ", i, "  time"
@@ -89,7 +76,7 @@ for i in range(runs + show + 3):
         # print Ricci
         # print Ricci/dist, '<- Ricc/dist'
         print '---------'
-        if ((sqdist > threshold) & (sqdist < upperthreshold)).any():
+        if ne.evaluate('(sqdist>threshold)&(sqdist<upperthreshold)').any():
             print 'values still in ambiguous interval'
             continue
         if is_clustered(sqdist, threshold):

@@ -146,7 +146,7 @@ def coarseRicci4(L, sqdist):
     return R
 
 # currently best method
-coarseRicci = coarseRicci3
+coarseRicci = coarseRicci4
 
 #
 # tests based on old Ricci
