@@ -50,18 +50,19 @@ print 'initial Ricci'
 print Ricci
 
 
-applyRicci(sqdist, eta, Ricci, mode='sym')
+loosekernel = ne.evaluate('eta*exp(-sqdist)')
+applyRicci(sqdist, loosekernel, Ricci, mode='sym')
 sanitize(sqdist)
 
 initial_L1 = sqdist.sum()
 # This will modify Ricci locally more than far away.
-loosekernel = ne.evaluate('eta*exp(-sqdist)')
 
 
 for i in range(runs + show + 3):
 
-    L = Laplacian(sqdist, t)
-    Ricci = coarseRicci(L, sqdist)
+    loosekernel[:] = ne.evaluate('eta*exp(-sqdist)')
+    L[:] = Laplacian(sqdist, t)
+    Ricci[:] = coarseRicci(L, sqdist)
     applyRicci(sqdist, loosekernel, Ricci, mode='sym')
 
     # total_distance = sqdist.sum()
