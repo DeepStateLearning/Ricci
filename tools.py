@@ -109,7 +109,7 @@ def metricize2(dist):
     ne.evaluate('dist**2', out=dist)
 
 
-metricize = metricize2
+metricize = metricize3
 
 
 def sanitize(sqdist, clip=np.inf, norm=None):
@@ -143,7 +143,14 @@ def is_metric(sqdist, eps=1E-10):
             return False
     return True
 
-
+    
+def is_stuck(a,b,eta):  # Check if the ricci flow is stuck
+    c = np.absolute(a-b)
+    if c.max()<eta/10:
+        return True
+    else :return False
+    
+ 
 def is_clustered(sqdist, threshold):
     """
     Check if the metric is cluster.
@@ -160,8 +167,8 @@ def is_clustered(sqdist, threshold):
                 if not np.array_equal(partition[i, :], partition[j, :]):
                     return False
     print 'clustered!!'
-    np.savetxt("clust.csv", partition, fmt="%5i", delimiter=",")
-    print 'saved to cust.csv'
+    #np.savetxt("clust.csv", partition, fmt="%5i", delimiter=",")
+    #print 'saved to cust.csv'
     return True
 
 
