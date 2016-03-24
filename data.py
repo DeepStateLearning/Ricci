@@ -30,6 +30,14 @@ def noisycircles(n, factor, noise):
     sqdist = cdist(pointset, pointset, 'sqeuclidean')
     return pointset, sqdist
     
+
+
+def noisymoons(n,noise):
+    pointset, _ = datasets.make_moons(n_samples=n, noise=noise)
+    sqdist = cdist(pointset, pointset, 'sqeuclidean')
+    return pointset, sqdist
+    
+
     
                        
     
