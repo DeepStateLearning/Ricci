@@ -28,13 +28,13 @@ def applyRicci(sqdist, eta, Ricci, mode='sym'):
     Note: eta can be a localizing kernel too.
     """
     if 'sym' in mode:
-        ne.evaluate('sqdist + (eta/2)*(Ricci+RicciT)',
+        ne.evaluate('sqdist - (eta/2)*(Ricci+RicciT)',
                     global_dict={'RicciT': Ricci.T}, out=sqdist)
     elif 'max' in mode:
-        ne.evaluate('sqdist + eta*where(Ricci<RicciT, RicciT, Ricci)',
+        ne.evaluate('sqdist - eta*where(Ricci<RicciT, RicciT, Ricci)',
                     global_dict={'RicciT': Ricci.T}, out=sqdist)
     else:
-        ne.evaluate('sqdist + eta*Ricci',
+        ne.evaluate('sqdist - eta*Ricci',
                     global_dict={'RicciT': Ricci.T}, out=sqdist)
 
 
