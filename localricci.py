@@ -19,8 +19,9 @@ upperthreshold = 0.6  # won't try to cluster if distances in ambiguity interva (
 #   (perhaps this is a misgnomer and it should be 'L2' but whatever)
 # 'L_inf' rescales each to have diameter 1"
 rescale = 'L1'
-t = 0.3 # should not be integer to avaoid division problems
-noise = 0.02  # noise coefficient
+t = 0.4 # should not be integer to avaoid division problems.  This scale is used for computing the Laplace operator
+T = 0.1 # scale used for localization of ricci flow 
+noise = 0.05  # noise coefficient
 CLIP = 60  # value at which we clip distance function
 
 np.set_printoptions(precision=2, suppress=True)
@@ -35,11 +36,11 @@ from data import noisycircles, noisymoons
 # sqdist, pointset = data.two_clusters(35, 25, 2, dim=2)
 twodim = True
 
-n_samples = 150
+n_samples = 120
 
 
 
-pointset, sqdist = noisycircles(n_samples, .5, noise)
+#pointset, sqdist = noisycircles(n_samples, .5, noise)
 
 pointset, sqdist = noisymoons(n_samples, noise)
 
@@ -52,7 +53,7 @@ print sqdist
 print 'initial Ricci'
 print Ricci
 
-loosekernel = ne.evaluate('eta*exp(-sqdist)')
+loosekernel = ne.evaluate('eta*exp(-sqdist/T)')
 applyRicci(sqdist, loosekernel, Ricci, mode='sym')
 
 initial_L1 = sqdist.sum()
@@ -60,7 +61,7 @@ initial_L1 = sqdist.sum()
 clustered = False
 oldsqdist = np.copy(sqdist)
 for i in range(runs + show + 3):
-    # loosekernel[:] = ne.evaluate('eta*exp(-sqdist)')
+    loosekernel[:] = ne.evaluate('eta*exp(-sqdist/T)')
     L[:] = Laplacian(sqdist, t)
     Ricci[:] = coarseRicci(L, sqdist)
     applyRicci(sqdist, loosekernel, Ricci, mode='sym')
@@ -104,6 +105,7 @@ if not clustered :
         
 choices = 'rgbmyc'
 colors = [(choices[j] if j < len(choices) else 'k') for j in clust]
+print clust
 print colors
 
 if twodim:
