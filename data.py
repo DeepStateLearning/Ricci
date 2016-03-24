@@ -4,6 +4,7 @@ from numba import jit
 import numpy as np
 # import numexpr as ne
 from scipy.spatial.distance import cdist
+from sklearn import cluster, datasets
 
 
 @jit("void(f8[:,:], f8, f8)", nopython=True, nogil=True)
@@ -19,6 +20,19 @@ def symmetric_gen(A, sigma, sep):
     for i in range(n):
         for j in range(n):
             A[i, j + n] = A[j + n, i] = np.random.normal(sep, sigma)
+            
+            
+        
+
+
+def noisycircles(n, factor, noise):
+    pointset, _ = datasets.make_circles(n_samples=n, factor=factor, noise=noise)
+    sqdist = cdist(pointset, pointset, 'sqeuclidean')
+    return pointset, sqdist
+    
+    
+                       
+    
 
 
 def two_clusters(k, l, sep, dim=2):
