@@ -102,7 +102,7 @@ class LaplaceTests (unittest.TestCase):
         import data
         threshold = 1E-10
         print
-        for d in data.small_tests():
+        for d in data.tests('small'):
             error = np.max(np.abs(np.sum(f(d, 0.1), axis=1)))
             print "Absolute error: ", error
             self.assertLess(error, threshold)

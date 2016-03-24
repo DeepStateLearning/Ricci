@@ -66,7 +66,7 @@ def closefarsimplices(n, noise, separation):
 def tests(size='small'):
     """ Generate a few data sets for testing. """
     if size == 'small':
-        return [two_clusters(3, 2, 0.1, 1)[1], cyclegraph(5, 0.1),
+        return [two_clusters(3, 2, 0.1, 1)[0], cyclegraph(5, 0.1),
                 closefarsimplices(3, 0.1, 5)]
     else:
         return [closefarsimplices(50, 0.1, 5), closefarsimplices(100, 0.1, 5)]
