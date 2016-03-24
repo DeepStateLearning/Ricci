@@ -13,7 +13,7 @@ def test_speed(f, *args):
     print 'Fastest out of 5: {} s'.format(min(t))
 
 
-def metricize(dist):
+def metricize3(dist):
     """
     Metricize a matrix of "squared distances".
 
@@ -109,6 +109,29 @@ def metricize2(dist):
     ne.evaluate('dist**2', out=dist)
 
 
+metricize = metricize2
+
+
+def sanitize(sqdist, clip=np.inf, norm=None):
+    """
+    Clean up the distance matrix.
+
+    Clip large values, metricize and renormalize.
+    """
+    np.clip(sqdist, 0, clip, out=sqdist)
+    metricize(sqdist)
+    try:
+        float(norm)
+        s2 = sqdist.sum()
+        ne.evaluate("norm*sqdist/s2", out=sqdist)
+    except:
+        if norm=='max':
+            nonzero = sqdist[np.nonzero(sqdist)]
+            mindist = np.amin(nonzero)
+            ne.evaluate("sqdist/mindist", out=sqdist)
+
+
+
 def is_metric(sqdist, eps=1E-10):
     """ Check if the matrix is a true squared distance matrix. """
     dist = ne.evaluate("sqrt(dist)")
@@ -119,35 +142,37 @@ def is_metric(sqdist, eps=1E-10):
         if np.any(temp):
             return False
     return True
-	
-def is_clustered(sqdist,threshold):   
-	"""Check if the metric is cluster.   If the relations d(x,y)<threshold partitions the point set, returns True"""
-	n = len(sqdist)
-	partition = (sqdist<threshold)
-	print partition
-	for i in range(n):
-		setpart=partition[i,:]
-		for j in range(i,n):
-			if (partition[i,:]*partition[j,:]).any()==True:
-				if not np.array_equal(partition[i,:],partition[j,:]) : return False
-	print 'clustered!!'
-	np.savetxt("clust.csv", partition,fmt = "%5i", delimiter=",")
-	print 'saved to cust.csv'
-	
-	
-	return True
-	
-	
-def color_clusters(sqdist,threshold):
-	"""Assuming the metric is clustered, return a colored array"""
-	
-	n = len(sqdist)
-	partition = (sqdist<threshold)
-	clust=np.zeros(n)
-	for i in range(n):
-		for j in range(n):
-			if partition[i,j]:
-				clust[i]=j
-				break
-	return clust
-				
+
+
+def is_clustered(sqdist, threshold):
+    """
+    Check if the metric is cluster.
+
+    If the relations d(x,y)<threshold partitions the point set, returns True.
+    """
+    n = len(sqdist)
+    partition = (sqdist < threshold)
+    print partition
+    for i in range(n):
+        # setpart = partition[i, :]
+        for j in range(i, n):
+            if (partition[i, :] * partition[j, :]).any():
+                if not np.array_equal(partition[i, :], partition[j, :]):
+                    return False
+    print 'clustered!!'
+    np.savetxt("clust.csv", partition, fmt="%5i", delimiter=",")
+    print 'saved to cust.csv'
+    return True
+
+
+def color_clusters(sqdist, threshold):
+    """Assuming the metric is clustered, return a colored array."""
+    n = len(sqdist)
+    partition = (sqdist < threshold)
+    clust = np.zeros(n, dtype=int)
+    for i in range(n):
+        for j in range(n):
+            if partition[i, j]:
+                clust[i] = j
+                break
+    return clust
