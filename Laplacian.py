@@ -120,10 +120,10 @@ class LaplaceTests (unittest.TestCase):
         """ Test speed on larger data sets. """
         import data
         from tools import test_speed
-        d = data.closefarsimplices(200, 0.1, 5)
+        d = data.closefarsimplices(200, 0.1, 5)[0]
         print "\nPoints: 200"
         test_speed(f, d, 0.1)
-        d = data.closefarsimplices(400, 0.1, 5)
+        d = data.closefarsimplices(400, 0.1, 5)[0]
         print "Points: 400"
         test_speed(f, d, 0.1)
 

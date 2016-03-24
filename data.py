@@ -1,9 +1,14 @@
-""" A few examples of squared distance matrices. """
+"""
+A few examples of squared distance matrices.
+
+All functions also return pointset if available, None otherwise.
+"""
 
 from numba import jit
 import numpy as np
 # import numexpr as ne
 from scipy.spatial.distance import cdist
+from sklearn import datasets
 
 
 @jit("void(f8[:,:], f8, f8)", nopython=True, nogil=True)
@@ -48,7 +53,7 @@ def cyclegraph(n, noise):
             ndist[i, j] = dist[i, j] * noise * np.random.randn(1)
     dist = dist * dist
     dist = dist + ndist + ndist.transpose()
-    return dist
+    return dist, None
 
 
 def closefarsimplices(n, noise, separation):
@@ -60,13 +65,28 @@ def closefarsimplices(n, noise, separation):
     """
     dist = np.zeros((2 * n, 2 * n))
     symmetric_gen(dist, noise, separation)
-    return dist
+    return dist, None
+
+
+def circles(n, noise=0.01, factor=0.5):
+    """ Two noisy concentric circles. """
+    pointset, _ = datasets.make_circles(n_samples=n, factor=factor, noise=noise)
+    sqdist = cdist(pointset, pointset, 'sqeuclidean')
+    return sqdist, pointset
+
+
+def moons(n, noise=0.01):
+    """ Two noicy moons. """
+    pointset, _ = datasets.make_moons(n_samples=n, noise=noise)
+    sqdist = cdist(pointset, pointset, 'sqeuclidean')
+    return sqdist, pointset
 
 
 def tests(size='small'):
     """ Generate a few data sets for testing. """
     if size == 'small':
-        return [two_clusters(3, 2, 0.1, 1)[0], cyclegraph(5, 0.1),
-                closefarsimplices(3, 0.1, 5)]
+        return [two_clusters(3, 2, 0.1, 1)[0], cyclegraph(5, 0.1)[0],
+                closefarsimplices(3, 0.1, 5)[0]]
     else:
-        return [closefarsimplices(50, 0.1, 5), closefarsimplices(100, 0.1, 5)]
+        return [closefarsimplices(50, 0.1, 5)[0],
+                closefarsimplices(100, 0.1, 5)[0]]
