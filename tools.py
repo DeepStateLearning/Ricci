@@ -7,9 +7,13 @@ from numba import jit
 import threading
 
 
-def test_speed(f, *args):
+def test_speed(f, *args, **kwargs):
     """ Test the speed of a function. """
-    t = timeit.repeat(lambda: f(*args), repeat=5, number=1)
+    if 'repeat' in kwargs:
+        repeat = kwargs['repeat']
+    else:
+        repeat = 5
+    t = timeit.repeat(lambda: f(*args), repeat=repeat, number=1)
     print 'Fastest out of 5: {} s'.format(min(t))
 
 
@@ -36,7 +40,7 @@ def metricize3(dist):
 
 def parallel(num, numthreads=8):
     """
-    Decorator to execute a function with the first few split into chunks.
+    Decorator to execute a function with the first few args split into chunks.
 
     All arguments should be numpy arrays.
 
@@ -125,16 +129,15 @@ def sanitize(sqdist, clip=np.inf, norm=None):
         s2 = sqdist.sum()
         ne.evaluate("norm*sqdist/s2", out=sqdist)
     except:
-        if norm=='max':
+        if norm == 'max':
             nonzero = sqdist[np.nonzero(sqdist)]
             mindist = np.amin(nonzero)
             ne.evaluate("sqdist/mindist", out=sqdist)
 
 
-
-def is_metric(sqdist, eps=1E-10):
+def is_metric(sqdist, eps=1E-12):
     """ Check if the matrix is a true squared distance matrix. """
-    dist = ne.evaluate("sqrt(dist)")
+    dist = ne.evaluate("sqrt(sqdist)")
     for i in xrange(len(dist)):
         temp = ne.evaluate("diT + dist - di < -eps",
                            global_dict={'diT': dist[i, :, None],
@@ -183,3 +186,52 @@ def color_clusters(sqdist, threshold):
                 clust[i] = j
                 break
     return clust
+
+
+import unittest
+
+
+class ToolsTests (unittest.TestCase):
+
+    """ Correctness and speed tests. """
+
+    def test_correct(self):
+        """ Test correctness of metricize2 on random data sets. """
+        threshold = 1E-10
+        print
+        for n in range(200, 500, 100):
+            d = np.random.rand(n, n)
+            d += d.T
+            np.fill_diagonal(d, 0)
+            d2 = d.copy()
+            d3 = d.copy()
+            metricize2(d)
+            metricize3(d2)
+            print "Changed entries: {} out of {}." \
+                .format(n*n - np.isclose(d, d3).sum(), n*n)
+            error = np.max(np.abs(d-d2))
+            print "Absolute difference between methods: ", error
+            self.assertLess(error, threshold)
+            self.assertTrue(is_metric(d))
+
+    def speed(self, f):
+        """ Test speed on larger data sets. """
+        print
+        s = 200
+        for n in range(s, 4*s, s):
+            d = np.random.rand(n, n)
+            d += d.T
+            np.fill_diagonal(d, 0)
+            test_speed(f, d, repeat=1)
+
+    def test_speed_metricize2(self):
+        """ Speed of the parallelized metricize. """
+        self.speed(metricize2)
+
+    def test_speed_metricize3(self):
+        """ Speed of the numpy metricize. """
+        self.speed(metricize3)
+
+if __name__ == "__main__":
+    suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
+    unittest.TextTestRunner(verbosity=2).run(suite)

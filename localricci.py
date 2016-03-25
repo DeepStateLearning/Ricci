@@ -20,7 +20,7 @@ upperthreshold = 0.6  # won't try to cluster if distances in ambiguity interva (
 # 'L_inf' rescales each to have diameter 1"
 rescale = 'L1'
 t = 0.4 # should not be integer to avaoid division problems.  This scale is used for computing the Laplace operator
-T = 0.1 # scale used for localization of ricci flow 
+T = 0.1 # scale used for localization of ricci flow
 noise = 0.05  # noise coefficient
 CLIP = 60  # value at which we clip distance function
 
@@ -42,7 +42,7 @@ n_samples = 120
 
 #pointset, sqdist = noisycircles(n_samples, .5, noise)
 
-pointset, sqdist = noisymoons(n_samples, noise)
+sqdist, pointset = noisymoons(n_samples, noise)
 
 sanitize(sqdist)
 L = Laplacian(sqdist, t)
@@ -83,7 +83,7 @@ for i in range(runs + show + 3):
         print '---------'
         if is_stuck(sqdist,oldsqdist,eta):
             print 'stuck!'
-            clustered 
+            clustered
             break
         oldsqdist = np.copy(sqdist)
         if ne.evaluate('(sqdist>threshold)&(sqdist<upperthreshold)').any():
@@ -95,14 +95,14 @@ for i in range(runs + show + 3):
             break
 
 
-if not clustered : 
+if not clustered :
     if is_clustered(sqdist, threshold):
          clust = color_clusters(sqdist, threshold)
-    else : 
+    else :
         print 'not clustered at all'
         quit()
 
-        
+
 choices = 'rgbmyc'
 colors = [(choices[j] if j < len(choices) else 'k') for j in clust]
 print clust

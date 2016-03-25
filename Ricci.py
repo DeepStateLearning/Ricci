@@ -28,13 +28,13 @@ def applyRicci(sqdist, eta, Ricci, mode='sym'):
     Note: eta can be a localizing kernel too.
     """
     if 'sym' in mode:
-        ne.evaluate('sqdist + (eta/2)*(Ricci+RicciT)',
+        ne.evaluate('sqdist - (eta/2)*(Ricci+RicciT)',
                     global_dict={'RicciT': Ricci.T}, out=sqdist)
     elif 'max' in mode:
-        ne.evaluate('sqdist + eta*where(Ricci<RicciT, RicciT, Ricci)',
+        ne.evaluate('sqdist - eta*where(Ricci<RicciT, RicciT, Ricci)',
                     global_dict={'RicciT': Ricci.T}, out=sqdist)
     else:
-        ne.evaluate('sqdist + eta*Ricci',
+        ne.evaluate('sqdist - eta*Ricci',
                     global_dict={'RicciT': Ricci.T}, out=sqdist)
 
 
@@ -178,7 +178,7 @@ class RicciTests (unittest.TestCase):
         from Laplacian import Laplacian
         from tools import test_speed
         for p in points:
-            d = data.closefarsimplices(p, 0.1, 5)
+            d = data.closefarsimplices(p, 0.1, 5)[0]
             print "\nPoints: {}".format(2*p)
             test_speed(Laplacian, d, 0.1)
             L = Laplacian(d, 0.1)

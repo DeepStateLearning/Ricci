@@ -102,7 +102,7 @@ class LaplaceTests (unittest.TestCase):
         import data
         threshold = 1E-10
         print
-        for d in data.small_tests():
+        for d in data.tests('small'):
             error = np.max(np.abs(np.sum(f(d, 0.1), axis=1)))
             print "Absolute error: ", error
             self.assertLess(error, threshold)
@@ -120,10 +120,10 @@ class LaplaceTests (unittest.TestCase):
         """ Test speed on larger data sets. """
         import data
         from tools import test_speed
-        d = data.closefarsimplices(200, 0.1, 5)
+        d = data.closefarsimplices(200, 0.1, 5)[0]
         print "\nPoints: 200"
         test_speed(f, d, 0.1)
-        d = data.closefarsimplices(400, 0.1, 5)
+        d = data.closefarsimplices(400, 0.1, 5)[0]
         print "Points: 400"
         test_speed(f, d, 0.1)
 
