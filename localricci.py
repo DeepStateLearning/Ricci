@@ -29,7 +29,7 @@ np.set_printoptions(precision=2, suppress=True)
 from tools import sanitize, is_clustered, color_clusters, is_stuck
 from Laplacian import Laplacian
 from Ricci import coarseRicci, applyRicci
-from data import noisycircles, noisymoons, two_clusters, perm_moons_200, perm_circles_200
+from data import noisycircles, noisymoons, two_clusters, perm_moons_200, perm_circles_200, four_clusters_3d
 
 
 # import data
@@ -44,8 +44,10 @@ n_samples = 370
 #sqdist, pointset = noisymoons(n_samples, noise)
 
 #sqdist, pointset = two_clusters(74,74,7)
-sqdist, pointset = perm_circles_200()
-
+#sqdist, pointset = perm_circles_200()
+sqdist, pointset = four_clusters_3d(75,7)
+twodim = False
+threedim = True
 
 sanitize(sqdist, 'L_inf', 1)
 L = Laplacian(sqdist, t)
@@ -115,4 +117,14 @@ if twodim:
     import matplotlib.pyplot as plt
     plt.scatter(pointset[:, 0], pointset[:, 1],  color=colors)
     plt.axis('equal')
+    plt.show()
+
+if threedim:
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    data = pointset
+    ax.scatter(data[:,0], data[:,1], data[:,2],  color=colors)
+    plt.show()
     plt.show()

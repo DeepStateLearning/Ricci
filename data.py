@@ -52,6 +52,20 @@ def two_clusters(k, l, sep, dim=2):
     Z = Z[Z[:, 0].argsort()]
     return cdist(Z, Z, 'sqeuclidean'), Z
 
+    
+def four_clusters_3d(k, sep, dim=3):
+    """
+    Return squared distances for two clusters from normal distribution.
+
+    k, l - sizes of clusters,
+    sep>0 - distance between clusters.
+    """
+    Z = np.random.normal(size=(4*k, dim))
+    Z[0:k, 0] += sep
+    Z[k:2*k, 1] += sep
+    Z[2*k:3*k, 2] += sep
+    return cdist(Z, Z, 'sqeuclidean'), Z
+
 
 def cyclegraph(n, noise):
     """
