@@ -21,7 +21,7 @@ upperthreshold = 0.3  # won't try to cluster if distances in ambiguity interva (
 rescale = 'L1'
 t = 0.2 # should not be integer to avaoid division problems.  This scale is used for computing the Laplace operator
 T = 0.2 # scale used for localization of ricci flow
-noise = 0.05  # noise coefficient
+noise = 0.06  # noise coefficient
 CLIP = 60  # value at which we clip distance function
 
 np.set_printoptions(precision=2, suppress=True)
@@ -29,21 +29,22 @@ np.set_printoptions(precision=2, suppress=True)
 from tools import sanitize, is_clustered, color_clusters, is_stuck
 from Laplacian import Laplacian
 from Ricci import coarseRicci, applyRicci
-from data import noisycircles, noisymoons, two_clusters
+from data import noisycircles, noisymoons, two_clusters, perm_moons_200, perm_circles_200
 
 
 # import data
 # sqdist, pointset = data.two_clusters(35, 25, 2, dim=2)
 twodim = True
 
-n_samples = 170
+n_samples = 370
 
 
 
 
-sqdist, pointset = noisymoons(n_samples, noise)
+#sqdist, pointset = noisymoons(n_samples, noise)
 
 #sqdist, pointset = two_clusters(74,74,7)
+sqdist, pointset = perm_circles_200()
 
 
 sanitize(sqdist, 'L_inf', 1)

@@ -69,6 +69,20 @@ def cyclegraph(n, noise):
     dist = dist + ndist + ndist.transpose()
     return dist, None
 
+    
+def perm_moons_200():
+    print 'noisy moons with 200 points noise = 0.05' 
+    pointset = np.load('nm1.npy', False)
+    sqdist = cdist(pointset, pointset, 'sqeuclidean')
+    return sqdist, pointset
+    
+
+def perm_circles_200():
+    print 'noisy circles with 200 points noise = 0.05, factor = .5' 
+    pointset = np.load('nc1.npy', False)
+    sqdist = cdist(pointset, pointset, 'sqeuclidean')
+    return sqdist, pointset
+    
 
 def closefarsimplices(n, noise, separation):
     """

@@ -116,7 +116,7 @@ def metricize2(dist):
 metricize = metricize3
 
 
-def sanitize(sqdist,  how, clip=np.inf, norm=None):
+def sanitize(sqdist,  how='L_inf', clip=np.inf, norm=None):
     """
     Clean up the distance matrix.
 
