@@ -26,6 +26,20 @@ def symmetric_gen(A, sigma, sep):
             A[i, j + n] = A[j + n, i] = np.random.normal(sep, sigma)
 
 
+def noisycircles(n, factor=0.5, noise=0.1):
+    """ Two noisy concentric circles. """
+    pointset, _ = datasets.make_circles(n_samples=n, factor=factor, noise=noise)
+    sqdist = cdist(pointset, pointset, 'sqeuclidean')
+    return sqdist, pointset
+
+
+def noisymoons(n, noise=0.1):
+    """ Two noicy moons. """
+    pointset, _ = datasets.make_moons(n_samples=n, noise=noise)
+    sqdist = cdist(pointset, pointset, 'sqeuclidean')
+    return sqdist, pointset
+
+
 def two_clusters(k, l, sep, dim=2):
     """
     Return squared distances for two clusters from normal distribution.
@@ -68,20 +82,6 @@ def closefarsimplices(n, noise, separation):
     return dist, None
 
 
-def circles(n, noise=0.01, factor=0.5):
-    """ Two noisy concentric circles. """
-    pointset, _ = datasets.make_circles(n_samples=n, factor=factor, noise=noise)
-    sqdist = cdist(pointset, pointset, 'sqeuclidean')
-    return sqdist, pointset
-
-
-def moons(n, noise=0.01):
-    """ Two noicy moons. """
-    pointset, _ = datasets.make_moons(n_samples=n, noise=noise)
-    sqdist = cdist(pointset, pointset, 'sqeuclidean')
-    return sqdist, pointset
-
-
 def tests(size='small'):
     """ Generate a few data sets for testing. """
     if size == 'small':
@@ -98,11 +98,12 @@ import unittest
 class DataTests (unittest.TestCase):
 
     """ Correctness tests. """
+
     def format(self, f):
         """ Test symmetry and output format for each data set. """
         # return distance matrix and pointset
         output = f()
-        self.assertTrue(len(output)==2)
+        self.assertTrue(len(output) == 2)
         d = output[0]
         self.assertTrue(d.shape[0] == d.shape[1])
         self.assertTrue(np.allclose(d, d.T))
@@ -112,13 +113,13 @@ class DataTests (unittest.TestCase):
 
     def test_moons(self):
         """ Test validity of moons dataset. """
-        self.format(lambda: moons(50))
-        self.format(lambda: moons(100))
+        self.format(lambda: noisymoons(50))
+        self.format(lambda: noisymoons(100))
 
     def test_circles(self):
         """ Test validity of circles dataset. """
-        self.format(lambda: circles(50))
-        self.format(lambda: circles(100))
+        self.format(lambda: noisycircles(50))
+        self.format(lambda: noisycircles(100))
 
     def test_closefarsimplices(self):
         """ Test validity of circles dataset. """
