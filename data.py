@@ -90,3 +90,50 @@ def tests(size='small'):
     else:
         return [closefarsimplices(50, 0.1, 5)[0],
                 closefarsimplices(100, 0.1, 5)[0]]
+
+
+import unittest
+
+
+class DataTests (unittest.TestCase):
+
+    """ Correctness tests. """
+    def format(self, f):
+        """ Test symmetry and output format for each data set. """
+        # return distance matrix and pointset
+        output = f()
+        self.assertTrue(len(output)==2)
+        d = output[0]
+        self.assertTrue(d.shape[0] == d.shape[1])
+        self.assertTrue(np.allclose(d, d.T))
+        self.assertFalse(np.diag(d).any())
+        from tools import is_metric
+        self.assertTrue(is_metric(d), "Distance matrix is not a metric.")
+
+    def test_moons(self):
+        """ Test validity of moons dataset. """
+        self.format(lambda: moons(50))
+        self.format(lambda: moons(100))
+
+    def test_circles(self):
+        """ Test validity of circles dataset. """
+        self.format(lambda: circles(50))
+        self.format(lambda: circles(100))
+
+    def test_closefarsimplices(self):
+        """ Test validity of circles dataset. """
+        self.format(lambda: closefarsimplices(50, 0.1, 3))
+
+    def test_clusters(self):
+        """ Test two clusters dataset. """
+        self.format(lambda: two_clusters(5, 3, 1.0))
+        self.format(lambda: two_clusters(10, 20, 5.0, 3))
+        self.format(lambda: two_clusters(1, 2, 0.0, 1))
+
+    def test_cyclegraph(self):
+        """ Test validity of cyclegraph dataset. """
+        self.format(lambda: cyclegraph(20, 0.01))
+
+if __name__ == "__main__":
+    suite = unittest.TestLoader().loadTestsFromTestCase(DataTests)
+    unittest.TextTestRunner(verbosity=2).run(suite)

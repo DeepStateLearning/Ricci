@@ -7,9 +7,13 @@ from numba import jit
 import threading
 
 
-def test_speed(f, *args):
+def test_speed(f, *args, **kwargs):
     """ Test the speed of a function. """
-    t = timeit.repeat(lambda: f(*args), repeat=5, number=1)
+    if 'repeat' in kwargs:
+        repeat = kwargs['repeat']
+    else:
+        repeat = 5
+    t = timeit.repeat(lambda: f(*args), repeat=repeat, number=1)
     print 'Fastest out of 5: {} s'.format(min(t))
 
 
@@ -211,7 +215,7 @@ class ToolsTests (unittest.TestCase):
             d = np.random.rand(n, n)
             d += d.T
             np.fill_diagonal(d, 0)
-            test_speed(f, d)
+            test_speed(f, d, repeat=1)
 
     def test_speed_metricize2(self):
         """ Speed of the parallelized metricize. """
