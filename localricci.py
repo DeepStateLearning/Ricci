@@ -45,11 +45,11 @@ n_samples = 370
 
 #sqdist, pointset = two_clusters(74,74,7)
 #sqdist, pointset = perm_circles_200()
-sqdist, pointset = four_clusters_3d(75,7)
+sqdist, pointset = four_clusters_3d(80,8)
 twodim = False
 threedim = True
 
-sanitize(sqdist, 'L_inf', 1)
+sanitize(sqdist, 'L_inf', CLIP, 1)
 L = Laplacian(sqdist, t)
 Ricci = coarseRicci(L, sqdist)
 
