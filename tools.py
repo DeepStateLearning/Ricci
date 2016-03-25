@@ -116,7 +116,7 @@ def metricize2(dist):
 metricize = metricize3
 
 
-def sanitize(sqdist, clip=np.inf, norm=None):
+def sanitize(sqdist,  how, clip=np.inf, norm=None):
     """
     Clean up the distance matrix.
 
@@ -124,15 +124,27 @@ def sanitize(sqdist, clip=np.inf, norm=None):
     """
     np.clip(sqdist, 0, clip, out=sqdist)
     metricize(sqdist)
-    try:
-        float(norm)
-        s2 = sqdist.sum()
-        ne.evaluate("norm*sqdist/s2", out=sqdist)
-    except:
-        if norm == 'max':
-            nonzero = sqdist[np.nonzero(sqdist)]
-            mindist = np.amin(nonzero)
-            ne.evaluate("sqdist/mindist", out=sqdist)
+    if how =='L1' :
+        try:
+            float(norm)
+            s2 = sqdist.sum()
+            ne.evaluate("norm*sqdist/s2", out=sqdist)
+        except:
+            if norm == 'min':
+                nonzero = sqdist[np.nonzero(sqdist)]
+                mindist = np.amin(nonzero)
+                ne.evaluate("sqdist/mindist", out=sqdist)
+    if how == 'L_inf' :
+        try:
+            float(norm)
+            s2 = sqdist.max()
+            ne.evaluate("norm*sqdist/s2", out=sqdist)
+        except:
+            if norm == 'min':
+                nonzero = sqdist[np.nonzero(sqdist)]
+                mindist = np.amin(nonzero)
+                ne.evaluate("sqdist/mindist", out=sqdist)
+        
 
 
 def is_metric(sqdist, eps=1E-12):

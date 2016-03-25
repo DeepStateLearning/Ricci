@@ -13,14 +13,14 @@ runs = 2000  # how many iterations
 show = 10  # how frequently we show the result
 eta = 0.0075  # factor of Ricci that is added to distance squared
 threshold = 0.05  # clustering threshold
-upperthreshold = 0.6  # won't try to cluster if distances in ambiguity interva (threshold, upperthreshold)
+upperthreshold = 0.3  # won't try to cluster if distances in ambiguity interva (threshold, upperthreshold)
 # 'min' rescales the distance squared function so minimum is 1.
 # 'L1' rescales it so the sum of distance squared stays the same
 #   (perhaps this is a misgnomer and it should be 'L2' but whatever)
 # 'L_inf' rescales each to have diameter 1"
 rescale = 'L1'
-t = 0.4 # should not be integer to avaoid division problems.  This scale is used for computing the Laplace operator
-T = 0.1 # scale used for localization of ricci flow
+t = 0.2 # should not be integer to avaoid division problems.  This scale is used for computing the Laplace operator
+T = 0.2 # scale used for localization of ricci flow
 noise = 0.05  # noise coefficient
 CLIP = 60  # value at which we clip distance function
 
@@ -29,22 +29,24 @@ np.set_printoptions(precision=2, suppress=True)
 from tools import sanitize, is_clustered, color_clusters, is_stuck
 from Laplacian import Laplacian
 from Ricci import coarseRicci, applyRicci
-from data import noisycircles, noisymoons
+from data import noisycircles, noisymoons, two_clusters
 
 
 # import data
 # sqdist, pointset = data.two_clusters(35, 25, 2, dim=2)
 twodim = True
 
-n_samples = 120
+n_samples = 170
 
 
 
-#pointset, sqdist = noisycircles(n_samples, .5, noise)
 
 sqdist, pointset = noisymoons(n_samples, noise)
 
-sanitize(sqdist)
+#sqdist, pointset = two_clusters(74,74,7)
+
+
+sanitize(sqdist, 'L_inf', 1)
 L = Laplacian(sqdist, t)
 Ricci = coarseRicci(L, sqdist)
 
@@ -71,7 +73,7 @@ for i in range(runs + show + 3):
     # print t
     # ne.evaluate("dist/s", out=dist)
 
-    sanitize(sqdist, CLIP, initial_L1)
+    sanitize(sqdist, 'L_inf', CLIP,  1)
 
     if i % show == 2:
         print Ricci
