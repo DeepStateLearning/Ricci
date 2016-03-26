@@ -201,6 +201,7 @@ def build_extension():
 # set current metricize method
 metricize = metricize3
 
+# replace wih C++ if possible
 try:
     build_extension()
     import ctools
@@ -219,7 +220,7 @@ except:
     metricize4 = metricize
 
 
-def sanitize(sqdist,  how='L_inf', clip=np.inf, norm=None):
+def sanitize(sqdist,  how='L_inf', clip=np.inf, norm=1.0):
     """
     Clean up the distance matrix.
 
@@ -228,27 +229,16 @@ def sanitize(sqdist,  how='L_inf', clip=np.inf, norm=None):
     # pylama:ignore=W0612
     np.clip(sqdist, 0, clip, out=sqdist)
     metricize(sqdist)
-    if how =='L1' :
-        try:
-            float(norm)
-            s2 = sqdist.sum()
-            ne.evaluate("norm*sqdist/s2", out=sqdist)
-        except:
-            if norm == 'min':
-                nonzero = sqdist[np.nonzero(sqdist)]
-                mindist = np.amin(nonzero)
-                ne.evaluate("sqdist/mindist", out=sqdist)
-    if how == 'L_inf' :
-        try:
-            float(norm)
-            s2 = sqdist.max()
-            ne.evaluate("norm*sqdist/s2", out=sqdist)
-        except:
-            if norm == 'min':
-                nonzero = sqdist[np.nonzero(sqdist)]
-                mindist = np.amin(nonzero)
-                ne.evaluate("sqdist/mindist", out=sqdist)
-        
+    try:
+        norm = float(norm)
+        assert norm > 0.0
+    except:
+        norm = 1.0
+    if how == 'L1':
+        s2 = sqdist.sum()
+    else:  # how == 'L_inf' :
+        s2 = sqdist.max()
+    ne.evaluate("norm*sqdist/s2", out=sqdist)
 
 
 def is_metric(sqdist, eps=1E-12):
@@ -265,7 +255,7 @@ def is_metric(sqdist, eps=1E-12):
 
 def is_stuck(a, b, eta):
     """ Check if the ricci flow is stuck. """
-    return ne.evaluate("a-b<eps/10").all()
+    return ne.evaluate("a-b<eta/10").all()
 
 
 def is_clustered(sqdist, threshold):
@@ -346,20 +336,10 @@ class ToolsTests (unittest.TestCase):
         """ Speed of the numpy metricize. """
         self.speed(metricize3)
 
+    def test_speed_metricize4(self):
+        """ Speed of the C++ metricize. """
+        self.speed(metricize4)
+
 if __name__ == "__main__":
-    # suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
-    # unittest.TextTestRunner(verbosity=2).run(suite)
-    from datetime import datetime
-    n = 1000
-    d = np.random.rand(n, n)
-    d = d + d.T
-    np.fill_diagonal(d, 0)
-    dm = d.copy()
-    metricize4(dm)
-    for m in [metricize4, metricize2, metricize3]:
-        print m.__doc__
-        dd = d.copy()
-        start = datetime.now()
-        m(dd)
-        print datetime.now()-start
-        print "Same as C++ version :", np.allclose(dm, dd)
+    suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
+    unittest.TextTestRunner(verbosity=2).run(suite)
