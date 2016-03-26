@@ -34,20 +34,18 @@ from data import noisycircles, noisymoons, two_clusters, perm_moons_200, perm_ci
 
 # import data
 # sqdist, pointset = data.two_clusters(35, 25, 2, dim=2)
-twodim = True
 
 n_samples = 370
 
 
 
 
-#sqdist, pointset = noisymoons(n_samples, noise)
+sqdist, pointset = noisymoons(n_samples, noise)
 
-#sqdist, pointset = two_clusters(74,74,7)
-#sqdist, pointset = perm_circles_200()
-sqdist, pointset = four_clusters_3d(80,8)
-twodim = False
-threedim = True
+# sqdist, pointset = two_clusters(74,74,7)
+# sqdist, pointset = perm_circles_200()
+# sqdist, pointset = four_clusters_3d(80,8)
+dim = len(pointset[0])
 
 sanitize(sqdist, 'L_inf', CLIP, 1)
 L = Laplacian(sqdist, t)
@@ -86,7 +84,7 @@ for i in range(runs + show + 3):
         # print Ricci
         # print Ricci/dist, '<- Ricc/dist'
         print '---------'
-        if is_stuck(sqdist,oldsqdist,eta):
+        if is_stuck(sqdist, oldsqdist, eta):
             print 'stuck!'
             clustered
             break
@@ -100,10 +98,10 @@ for i in range(runs + show + 3):
             break
 
 
-if not clustered :
+if not clustered:
     if is_clustered(sqdist, threshold):
-         clust = color_clusters(sqdist, threshold)
-    else :
+        clust = color_clusters(sqdist, threshold)
+    else:
         print 'not clustered at all'
         quit()
 
@@ -113,18 +111,16 @@ colors = [(choices[j] if j < len(choices) else 'k') for j in clust]
 print clust
 print colors
 
-if twodim:
-    import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+if dim == 2:
     plt.scatter(pointset[:, 0], pointset[:, 1],  color=colors)
     plt.axis('equal')
     plt.show()
-
-if threedim:
-    import matplotlib.pyplot as plt
+elif dim == 3:
     from mpl_toolkits.mplot3d import Axes3D
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     data = pointset
-    ax.scatter(data[:,0], data[:,1], data[:,2],  color=colors)
+    ax.scatter(data[:,0], data[:,1], data[:, 2],  color=colors)
     plt.show()
     plt.show()
