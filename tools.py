@@ -21,9 +21,7 @@ def metricize3(dist):
     """
     Metricize a matrix of "squared distances".
 
-    Modifies the array in-place.
-
-    Only minimizes over two-stop paths not all.
+    Pure numpy implementation.
     """
     ne.evaluate("sqrt(dist)", out=dist)
     error = 1
@@ -38,7 +36,7 @@ def metricize3(dist):
     ne.evaluate('dist**2', out=dist)
 
 
-def parallel(num, numthreads=8):
+def parallel(num, numthreads=4):
     """
     Decorator to execute a function with the first few args split into chunks.
 
@@ -91,7 +89,7 @@ def _inner_loops(dist, new, distunsplit):
         for j in xrange(len(distunsplit)):
             d_ij = dist[i, j]
             for k in xrange(len(distunsplit)):
-                dijk = dist[i, k] + distunsplit[k, j]
+                dijk = dist[i, k] + distunsplit[j, k]
                 if dijk < d_ij:
                     d_ij = dijk
             new[i, j] = d_ij
@@ -101,7 +99,7 @@ def metricize2(dist):
     """
     Metricize a matrix of "squared distances".
 
-    Only minimizes over two-stop paths not all.
+    Compiled using numba JIT and parallelized.
     """
     ne.evaluate("sqrt(dist)", out=dist)
     error = 1
@@ -113,7 +111,112 @@ def metricize2(dist):
     ne.evaluate('dist**2', out=dist)
 
 
+# metricize2 runs slowly the first time
+metricize2(np.zeros((16, 16)))
+
+
+def build_extension():
+    """ Build C++ extension with metricize. """
+    from scipy.weave import ext_tools
+    mod = ext_tools.ext_module('ctools')
+    # type declarations
+    d = np.zeros((2, 2))
+    code = r"""
+    double error=1;
+    const int n = Nd[0];
+    const int r = n*(n-1)/2;
+    const int w = n%2 ? (n-1)/2 : (n-1);
+    std::vector<double> tril;
+    tril.resize(r);
+
+    // sqdist to dist
+#pragma omp parallel for
+    for (int i=0; i<n*n; i++)
+        d[i] = sqrt(d[i]);
+
+    while (error > 10e-12)
+    {
+        error = 0;
+#pragma omp parallel shared(error)
+{
+        double d_ij, dijk, old;
+#pragma omp for reduction(+:error) schedule(static)
+        for (int l=0; l<r; ++l)
+        {
+            // lower triangle from linear index to improve parallel loop
+            int i = l/w;
+            int j = l%w;
+            if (j>=i)
+            {
+                i = n-1-i;
+                j = n-2-j;
+            }
+            old = d_ij = d[i*n+j];
+            for (int k=0; k<n; ++k)
+            {
+                dijk = d[i*n+k] + d[j*n+k];
+                if (dijk < d_ij)
+                    d_ij = dijk;
+            }
+            if (old>d_ij)
+            {
+                error += old-d_ij;
+                tril[l] = d_ij;
+            }
+        }
+#pragma omp for
+        for (int l=0; l<r; ++l)
+            if (tril[l]>0)
+            {
+                // lower triangle from linear index to improve parallel loop
+                int i = l/w;
+                int j = l%w;
+                if (j>=i)
+                {
+                    i = n-1-i;
+                    j = n-2-j;
+                }
+                d[i*n+j] = d[j*n+i] = tril[l];
+                tril[l] = 0;
+            }
+}
+    }
+
+    // dist to sqdist
+#pragma omp parallel for
+    for (int i=0; i<n*n; i++)
+        d[i] *= d[i];
+    """
+    func = ext_tools.ext_function('metricize_dist', code, ['d'])
+    # mod.customize.add_header('<omp.h>')
+    mod.customize.add_header('<vector>')
+    mod.customize.add_header('<cmath>')
+    mod.add_function(func)
+    mod.compile(extra_compile_args=["-O3 -fopenmp"],
+                verbose=2, libraries=['gomp'],
+                library_dirs=['/usr/local/lib'],
+                include_dirs=['/usr/local/include'])
+
+
+# set current metricize method
 metricize = metricize3
+
+try:
+    build_extension()
+    import ctools
+
+    def metricize4(dist):
+        """
+        Metricize a matrix of "squared distances".
+
+        C++ extension leveraging matrix symmetry and OpenMP.
+        """
+        ctools.metricize_dist(dist)
+
+    metricize = metricize4
+except:
+    print "   !!! Error: C++ extension failed to build !!!   "
+    metricize4 = metricize
 
 
 def sanitize(sqdist,  how='L_inf', clip=np.inf, norm=None):
@@ -122,6 +225,7 @@ def sanitize(sqdist,  how='L_inf', clip=np.inf, norm=None):
 
     Clip large values, metricize and renormalize.
     """
+    # pylama:ignore=W0612
     np.clip(sqdist, 0, clip, out=sqdist)
     metricize(sqdist)
     if how =='L1' :
@@ -158,14 +262,12 @@ def is_metric(sqdist, eps=1E-12):
             return False
     return True
 
-    
-def is_stuck(a,b,eta):  # Check if the ricci flow is stuck
-    c = np.absolute(a-b)
-    if c.max()<eta/10:
-        return True
-    else :return False
-    
- 
+
+def is_stuck(a, b, eta):
+    """ Check if the ricci flow is stuck. """
+    return ne.evaluate("a-b<eps/10").all()
+
+
 def is_clustered(sqdist, threshold):
     """
     Check if the metric is cluster.
@@ -182,8 +284,8 @@ def is_clustered(sqdist, threshold):
                 if not np.array_equal(partition[i, :], partition[j, :]):
                     return False
     print 'clustered!!'
-    #np.savetxt("clust.csv", partition, fmt="%5i", delimiter=",")
-    #print 'saved to cust.csv'
+    # np.savetxt("clust.csv", partition, fmt="%5i", delimiter=",")
+    # print 'saved to cust.csv'
     return True
 
 
@@ -213,7 +315,7 @@ class ToolsTests (unittest.TestCase):
         print
         for n in range(200, 500, 100):
             d = np.random.rand(n, n)
-            d += d.T
+            d = d + d.T
             np.fill_diagonal(d, 0)
             d2 = d.copy()
             d3 = d.copy()
@@ -232,7 +334,7 @@ class ToolsTests (unittest.TestCase):
         s = 200
         for n in range(s, 4*s, s):
             d = np.random.rand(n, n)
-            d += d.T
+            d = d + d.T
             np.fill_diagonal(d, 0)
             test_speed(f, d, repeat=1)
 
@@ -245,5 +347,19 @@ class ToolsTests (unittest.TestCase):
         self.speed(metricize3)
 
 if __name__ == "__main__":
-    suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
-    unittest.TextTestRunner(verbosity=2).run(suite)
+    # suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
+    # unittest.TextTestRunner(verbosity=2).run(suite)
+    from datetime import datetime
+    n = 1000
+    d = np.random.rand(n, n)
+    d = d + d.T
+    np.fill_diagonal(d, 0)
+    dm = d.copy()
+    metricize4(dm)
+    for m in [metricize4, metricize2, metricize3]:
+        print m.__doc__
+        dd = d.copy()
+        start = datetime.now()
+        m(dd)
+        print datetime.now()-start
+        print "Same as C++ version :", np.allclose(dm, dd)
