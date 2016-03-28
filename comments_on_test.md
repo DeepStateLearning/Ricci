@@ -1,10 +1,5 @@
 
 
-Observations:  
-0) I'm not sure this whole thing isn't a Rube Goldberg machine that is no more than modifying the distance function so that nearby points become closer, remetricizing, and then rescaling.  I just added a dumbricci test that simply return the square distance (i.e Ricci = Id) and it appears to get better results in some cases.   It's not clear right away that the Ricci is actually helping.   
-
-
-update:  Ricci seems to be working much betterm faster and more frequently than dumb Ricci
 
 
 1) It works much better when we localize the Ricci flow - this makes perfect geometric sense. From now on we do this.  This does allow for possible sparse matrix computation later on. 
@@ -17,3 +12,11 @@ update:  Ricci seems to be working much betterm faster and more frequently than 
 4) The flow is currently unstable - this is probably not good.  Creating a complete graph, and then adding a very small amount of noise, and running the ricci flow does end up clustering some points with each other.  Ideally, it should recreate a complete graph which is perfect homogeneous.    My thoughts at this point is that the volume needs to be rescaled to really reflect how the Ricci flow is behaving.  
 
 
+
+Observations:  
+0) I'm not sure this whole thing isn't a Rube Goldberg machine that is no more than modifying the distance function so that nearby points become closer, remetricizing, and then rescaling.  I just added a dumbricci test that simply return the square distance (i.e Ricci = Id) and it appears to get better results in some cases.   It's not clear right away that the Ricci is actually helping.   
+
+
+update:  Ricci seems to be working much betterm faster and more frequently than dumb Ricci
+
+update: update:  Confirmed many times again.  Dumb does get lucky, but in most of the cases it either fails to converge or converges quite slowly.  The ricci curvature flow is working much much better than the dumb one. 
