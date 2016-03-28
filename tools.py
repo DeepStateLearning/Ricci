@@ -255,7 +255,7 @@ def is_metric(sqdist, eps=1E-12):
 
 def is_stuck(a, b, eta):
     """ Check if the ricci flow is stuck. """
-    return ne.evaluate("a-b<eta/10").all()
+    return ne.evaluate("a-b<eta/50").all()
 
 
 def is_clustered(sqdist, threshold):
@@ -266,7 +266,7 @@ def is_clustered(sqdist, threshold):
     """
     n = len(sqdist)
     partition = (sqdist < threshold)
-    print partition
+    #print partition
     for i in range(n):
         # setpart = partition[i, :]
         for j in range(i, n):
