@@ -122,6 +122,9 @@ def coarseRicci4(L, sqdist):
 
     Running time is O(n^3) as opposed to other implementations' O(n^4).
     """
+    # It should be possible to improve the multiplications using dsymm, dsyrk.
+    # But dsymm is not faster than dgemm.
+    # And dsyrk can only help with L*L
     D = sqdist
     C = ne.evaluate("D*D/4.0")
     A = L.dot(L)
