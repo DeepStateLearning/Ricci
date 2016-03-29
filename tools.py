@@ -289,9 +289,19 @@ def color_clusters(sqdist, threshold):
             if partition[i, j]:
                 clust[i] = j
                 break
+    clust_set = set(clust)
+    map =  np.zeros(n, dtype=int)
+    count = 0
+    for i in range(n):
+        map[i]=count
+        if i in clust_set: count += 1
+    
+    for i in range(n):
+        clust[i]=map[clust[i]]
+      
     return clust
 
-
+    
 import unittest
 
 

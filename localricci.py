@@ -45,7 +45,7 @@ n_samples = 123
 
 # sqdist, pointset = two_clusters(74,74,7)
 #sqdist, pointset = perm_circles_200()
-sqdist, pointset = four_clusters_3d(80,4)
+sqdist, pointset = four_clusters_3d(125,6)
 dim = len(pointset[0])
 
 sanitize(sqdist, 'L_inf', CLIP, 1)
