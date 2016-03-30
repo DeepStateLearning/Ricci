@@ -263,7 +263,8 @@ try:
 
         Implemented in C++ using depth first connected component search.
         """
-        return ctools.clustered(sqdist, threshold)
+        try : return ctools.clustered(sqdist, threshold)
+        except : return is_clustered_old(sqdist, threshold)
 except:
     is_clustered = is_clustered_old
 
