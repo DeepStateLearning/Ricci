@@ -231,7 +231,7 @@ def is_metric(sqdist, eps=1E-12):
 
 def is_stuck(a, b, eta):
     """ Check if the ricci flow is stuck. """
-    return ne.evaluate("a-b<eta/10").all()
+    return ne.evaluate("a-b<eta/50").all()
 
 
 def is_clustered_old(sqdist, threshold):
@@ -278,6 +278,17 @@ def color_clusters(sqdist, threshold):
             if partition[i, j]:
                 clust[i] = j
                 break
+    clust_set = set(clust)
+    map = np.zeros(n, dtype=int)
+    count = 0
+    for i in range(n):
+        map[i] = count
+        if i in clust_set:
+            count += 1
+
+    for i in range(n):
+        clust[i] = map[clust[i]]
+
     return clust
 
 

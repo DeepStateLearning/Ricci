@@ -9,3 +9,12 @@ For example, the hope is that a cluster of points near each other in some metric
 Also, one would hope that if one perturbs a 'round' metric, the flow would behave in the long run like that of a round metric.  
 
 This is based on our recent work,  where we define the coarse Ricci curvature in terms of iterated laplace type operators.  http://arxiv.org/abs/1505.04166. 
+
+UPDATE:  It seems we need to play with densities in order to solve "finding the Einstein metric" part of the problem, but the Ricci flow is working to cluster some basic examples.   
+
+![Image of 3d cluster ](https://raw.githubusercontent.com/micah541/Ricci/master/pictures/3d2.png)
+
+![Image of Noisy Circles ](https://raw.githubusercontent.com/micah541/Ricci/master/pictures/NoisyCirclesMarch29.png)
+
+
+![Image of Noisy Moons ](https://raw.githubusercontent.com/micah541/Ricci/master/pictures/NoisyMoonsMarch25.png)
