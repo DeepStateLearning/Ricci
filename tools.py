@@ -116,91 +116,52 @@ metricize2(np.zeros((16, 16)))
 
 
 def build_extension():
-    """ Build C++ extension with metricize. """
+    """ Build C++ extension module ctools. """
     from scipy.weave import ext_tools
     mod = ext_tools.ext_module('ctools')
     # type declarations
     d = np.zeros((2, 2))
-    code = r"""
-    double error=1;
-    const int n = Nd[0];
-    const int r = n*(n-1)/2;
-    const int w = n%2 ? (n-1)/2 : (n-1);
-    std::vector<double> tril;
-    tril.resize(r);
+    d2 = np.zeros((2, 2))
+    threshold = 0.5
 
-    // sqdist to dist
-#pragma omp parallel for
-    for (int i=0; i<n*n; i++)
-        d[i] = sqrt(d[i]);
-
-    while (error > 10e-12)
-    {
-        error = 0;
-#pragma omp parallel shared(error)
-{
-        double d_ij, dijk, old;
-#pragma omp for reduction(+:error) schedule(static)
-        for (int l=0; l<r; ++l)
-        {
-            // lower triangle from linear index to improve parallel loop
-            int i = l/w;
-            int j = l%w;
-            if (j>=i)
-            {
-                i = n-1-i;
-                j = n-2-j;
-            }
-            old = d_ij = d[i*n+j];
-            for (int k=0; k<n; ++k)
-            {
-                dijk = d[i*n+k] + d[j*n+k];
-                if (dijk < d_ij)
-                    d_ij = dijk;
-            }
-            if (old>d_ij)
-            {
-                error += old-d_ij;
-                tril[l] = d_ij;
-            }
-        }
-#pragma omp for
-        for (int l=0; l<r; ++l)
-            if (tril[l]>0)
-            {
-                // lower triangle from linear index to improve parallel loop
-                int i = l/w;
-                int j = l%w;
-                if (j>=i)
-                {
-                    i = n-1-i;
-                    j = n-2-j;
-                }
-                d[i*n+j] = d[j*n+i] = tril[l];
-                tril[l] = 0;
-            }
-}
-    }
-
-    // dist to sqdist
-#pragma omp parallel for
-    for (int i=0; i<n*n; i++)
-        d[i] *= d[i];
-    """
+    # metricize using unrolled triangular loop
+    with open('cpp/metricize.cpp', 'r') as f:
+        code = f.read()
     func = ext_tools.ext_function('metricize_dist', code, ['d'])
+    mod.add_function(func)
+
+    # check if clustered function
+    with open('cpp/clustered.cpp', 'r') as f:
+        support_code = f.read()
+    func = ext_tools.ext_function('clustered', """
+    return_val = clustered_depthfirst(Nd[0], threshold, d);
+    """, ['d', 'threshold'])
+    func.customize.add_support_code(support_code)
+    mod.add_function(func)
+
+    # metricize via BLIS framework
+    with open('cpp/dgemm.c', 'r') as f:
+        support_code = f.read()
+    func = ext_tools.ext_function('gemm', """
+    int n = Nd[0];
+    dgemm_nn(n, n, n, d, 1, n, d, 1, n, d2, 1, n);
+    """, ['d', 'd2'])
+    func.customize.add_support_code(support_code)
+    mod.add_function(func)
     # mod.customize.add_header('<omp.h>')
     mod.customize.add_header('<vector>')
     mod.customize.add_header('<cmath>')
-    mod.add_function(func)
-    mod.compile(extra_compile_args=["-O3 -fopenmp"],
+    mod.customize.add_header('<x86intrin.h>')
+    mod.compile(extra_compile_args=["-O3 -fopenmp -march=native -ffast-math",
+                                    "-fomit-frame-pointer"],
                 verbose=2, libraries=['gomp'],
-                library_dirs=['/usr/local/lib'],
-                include_dirs=['/usr/local/include'])
+                # library_dirs=['/usr/local/lib'],
+                # include_dirs=['/usr/local/include']
+                )
 
 
 # set current metricize method
 metricize = metricize3
-
 # replace wih C++ if possible
 try:
     build_extension()
@@ -213,6 +174,21 @@ try:
         C++ extension leveraging matrix symmetry and OpenMP.
         """
         ctools.metricize_dist(dist)
+
+    def metricize5(dist):
+        """
+        Metricize based on BLIS framework for BLAS.
+
+        Modified ulmBLAS code for dgemm_nn.
+        """
+        ne.evaluate("sqrt(dist)", out=dist)
+        error = 1
+        new = dist.copy()
+        while error > 1E-12:
+            ctools.gemm(dist, new)
+            error = ne.evaluate("sum(dist-new)")
+            dist[:, :] = new
+        ne.evaluate('dist**2', out=dist)
 
     metricize = metricize4
 except:
@@ -258,15 +234,15 @@ def is_stuck(a, b, eta):
     return ne.evaluate("a-b<eta/50").all()
 
 
-def is_clustered(sqdist, threshold):
+def is_clustered_old(sqdist, threshold):
     """
     Check if the metric is cluster.
 
-    If the relations d(x,y)<threshold partitions the point set, returns True.
+    If the relations d(x,y)<threshold partitions the point set, return True.
     """
     n = len(sqdist)
     partition = (sqdist < threshold)
-    #print partition
+    # print partition
     for i in range(n):
         # setpart = partition[i, :]
         for j in range(i, n):
@@ -277,6 +253,19 @@ def is_clustered(sqdist, threshold):
     # np.savetxt("clust.csv", partition, fmt="%5i", delimiter=",")
     # print 'saved to cust.csv'
     return True
+
+try:
+    def is_clustered(sqdist, threshold):
+        """
+        Check if the metric is cluster.
+
+        If the relations d(x,y)<threshold partitions the point set, return True.
+
+        Implemented in C++ using depth first connected component search.
+        """
+        return ctools.clustered(sqdist, threshold)
+except:
+    is_clustered = is_clustered_old
 
 
 def color_clusters(sqdist, threshold):
@@ -290,18 +279,19 @@ def color_clusters(sqdist, threshold):
                 clust[i] = j
                 break
     clust_set = set(clust)
-    map =  np.zeros(n, dtype=int)
+    map = np.zeros(n, dtype=int)
     count = 0
     for i in range(n):
-        map[i]=count
-        if i in clust_set: count += 1
-    
+        map[i] = count
+        if i in clust_set:
+            count += 1
+
     for i in range(n):
-        clust[i]=map[clust[i]]
-      
+        clust[i] = map[clust[i]]
+
     return clust
 
-    
+
 import unittest
 
 
@@ -309,8 +299,8 @@ class ToolsTests (unittest.TestCase):
 
     """ Correctness and speed tests. """
 
-    def test_correct(self):
-        """ Test correctness of metricize2 on random data sets. """
+    def correct(self, f):
+        """ Test correctness against metricize3 on random data sets. """
         threshold = 1E-10
         print
         for n in range(200, 500, 100):
@@ -327,6 +317,18 @@ class ToolsTests (unittest.TestCase):
             print "Absolute difference between methods: ", error
             self.assertLess(error, threshold)
             self.assertTrue(is_metric(d))
+
+    def test_metricize2(self):
+        """ Test metricize2 (parallelized) against metricize3 (numpy). """
+        self.correct(metricize2)
+
+    def test_metricize4(self):
+        """ Test metricize4 (C++) against metricize3 (numpy). """
+        self.correct(metricize4)
+
+    def test_metricize5(self):
+        """ Test metricize5 (C++ BLIS) against metricize3 (numpy). """
+        self.correct(metricize5)
 
     def speed(self, f):
         """ Test speed on larger data sets. """
@@ -349,6 +351,28 @@ class ToolsTests (unittest.TestCase):
     def test_speed_metricize4(self):
         """ Speed of the C++ metricize. """
         self.speed(metricize4)
+
+    def test_speed_metricize5(self):
+        """ Speed of the BLIS metricize. """
+        self.speed(metricize5)
+
+    def test_clustered(self):
+        """ Check if fast clustered check works. """
+        from ctools import clustered
+        for n in range(100, 120):
+            # 5 clusters
+            A = np.random.randint(5, size=n)+1
+            A = np.array(A, dtype=float)
+            AA = ne.evaluate("AT*A-A*A", global_dict={'AT': A[:, None]})
+            ne.evaluate("where(AA!=0, 1.0, AA)", out=AA)
+            # test clustered first
+            self.assertTrue(is_clustered(AA, 0.5))
+            for k in range(0, 10):
+                # introduce a few extra connections
+                i, j = np.random.randint(n, size=2)
+                AA[i, j] = AA[j, i] = 0.0
+                self.assertTrue(is_clustered_old(AA, 0.5) == clustered(AA, 0.5))
+
 
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
