@@ -1,0 +1,5 @@
+export PATH="/Users/siudeja/anaconda/bin:$PATH"
+export CXX="g++-5"
+export CC="gcc-5"
+export LIBRARY_PATH="/usr/local/lib:$LIBRARY_PATH"
+export CPATH=":/usr/local/include:$CPATH"
