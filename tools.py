@@ -14,7 +14,7 @@ def test_speed(f, *args, **kwargs):
     else:
         repeat = 5
     t = timeit.repeat(lambda: f(*args), repeat=repeat, number=1)
-    print 'Fastest out of 5: {} s'.format(min(t))
+    print 'Fastest out of {}: {} s'.format(repeat, min(t))
 
 
 def metricize3(dist):
@@ -152,8 +152,8 @@ def build_extension():
     mod.customize.add_header('<vector>')
     mod.customize.add_header('<cmath>')
     mod.customize.add_header('<x86intrin.h>')
-    mod.compile(extra_compile_args=["-O3 -fopenmp -march=native -ffast-math",
-                                    "-fomit-frame-pointer"],
+    mod.compile(extra_compile_args=["-O3 -fopenmp -march=native",
+                                    "-fomit-frame-pointer -ffast-math"],
                 verbose=2, libraries=['gomp'],
                 # library_dirs=['/usr/local/lib'],
                 # include_dirs=['/usr/local/include']
@@ -190,7 +190,7 @@ try:
             dist[:, :] = new
         ne.evaluate('dist**2', out=dist)
 
-    metricize = metricize4
+    metricize = metricize5
 except:
     print "   !!! Error: C++ extension failed to build !!!   "
     metricize4 = metricize
@@ -203,7 +203,7 @@ def sanitize(sqdist,  how='L_inf', clip=np.inf, norm=1.0):
     Clip large values, metricize and renormalize.
     """
     # pylama:ignore=W0612
-    np.clip(sqdist, 0, clip, out=sqdist)
+    np.clip(sqdist, 0.0, clip, out=sqdist)
     metricize(sqdist)
     try:
         norm = float(norm)
@@ -255,6 +255,8 @@ def is_clustered_old(sqdist, threshold):
     return True
 
 try:
+    ctools.clustered
+
     def is_clustered(sqdist, threshold):
         """
         Check if the metric is cluster.
@@ -330,11 +332,11 @@ class ToolsTests (unittest.TestCase):
         """ Test metricize5 (C++ BLIS) against metricize3 (numpy). """
         self.correct(metricize5)
 
-    def speed(self, f):
+    def speed(self, f, s=200):
         """ Test speed on larger data sets. """
         print
-        s = 200
         for n in range(s, 4*s, s):
+            print "Points: ", n
             d = np.random.rand(n, n)
             d = d + d.T
             np.fill_diagonal(d, 0)
@@ -351,10 +353,15 @@ class ToolsTests (unittest.TestCase):
     def test_speed_metricize4(self):
         """ Speed of the C++ metricize. """
         self.speed(metricize4)
+        self.speed(metricize4, 500)
 
     def test_speed_metricize5(self):
         """ Speed of the BLIS metricize. """
         self.speed(metricize5)
+        self.speed(metricize5, 500)
+        A = np.random.rand(1500, 1500)
+        print "Same size np.dot(A, A) (metricize does a few multiplications):"
+        test_speed(np.dot, A, A, repeat=1)
 
     def test_clustered(self):
         """ Check if fast clustered check works. """

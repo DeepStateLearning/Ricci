@@ -22,7 +22,7 @@
 // new reduction operation
 #define min(x,y)  (((x)<(y)) ? (x) : (y))
 // zero element for the reduction
-#define MAX 1e+100
+#define MAX 1e+300
 // new pointwise operation
 #define add(x,y)  ((x)+(y))
 // redefine these to get other generalized inner products
@@ -241,7 +241,7 @@ dgemm_macro_kernel(int     mc,
                                    false,
                                    &C[i*MR*incRowC+j*NR*incColC],
                                    incRowC, incColC);
-            } else {
+            } else { // partial block at the edge
                 dgemm_micro_kernel(kc, &_A[i*kc*MR], &_B[j*kc*NR],
                                    true, // partial block
                                    _C, 1, MR);

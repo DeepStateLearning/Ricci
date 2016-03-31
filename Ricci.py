@@ -150,14 +150,14 @@ def coarseRicci4(L, sqdist):
     np.fill_diagonal(R, 0.0)
     return R
 
-    
+
 def getScalar(Ricci, sqdist, t):
     kernel = ne.evaluate("exp(-sqdist/t)")
     Scalar = np.diag(Ricci.dot(kernel))
     density = kernel.sum(axis=1)
     Scalar = ne.evaluate("Scalar/density")
     return Scalar
-    
+
 # currently best method
 coarseRicci = coarseRicci4
 
