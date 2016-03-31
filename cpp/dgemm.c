@@ -22,7 +22,7 @@
 // new reduction operation
 #define min(x,y)  (((x)<(y)) ? (x) : (y))
 // zero element for the reduction
-#define MAX 1.7976931348623158e+308
+#define MAX 1e+100
 // new pointwise operation
 #define add(x,y)  ((x)+(y))
 // redefine these to get other generalized inner products
@@ -138,12 +138,12 @@ pack_B(int kc, int nc, const double *B, int incRowB, int incColB,
 static void
 dgemm_micro_kernel(int kc,
                    const double *A, const double *B,
-                   double beta,
+                   bool partial,
                    double *C, int incRowC, int incColC)
 {
-    double AB[MR*NR];
 
     int i, j, l;
+    double AB[MR*NR];
 
 //
 //  Compute AB = A*B
@@ -164,7 +164,7 @@ dgemm_micro_kernel(int kc,
 //
 //  Update C <- beta*C
 //
-    if (beta==0.0) {
+    if (partial) {
         for (j=0; j<NR; ++j) {
             for (i=0; i<MR; ++i) {
                 C[i*incRowC+j*incColC] = MAX;
@@ -229,7 +229,7 @@ dgemm_macro_kernel(int     mc,
     int mr, nr;
     int i, j;
 
-#pragma omp parallel for default(shared) private(i, mr, nr)
+#pragma omp parallel for default(shared) private(i, mr, nr, _C)
     for (j=0; j<np; ++j) {
         nr    = (j!=np-1 || _nr==0) ? NR : _nr;
 
@@ -238,12 +238,12 @@ dgemm_macro_kernel(int     mc,
 
             if (mr==MR && nr==NR) {
                 dgemm_micro_kernel(kc, &_A[i*kc*MR], &_B[j*kc*NR],
-                                   1.0,
+                                   false,
                                    &C[i*MR*incRowC+j*NR*incColC],
                                    incRowC, incColC);
             } else {
                 dgemm_micro_kernel(kc, &_A[i*kc*MR], &_B[j*kc*NR],
-                                   0.0, // zero element of the reduction operation
+                                   true, // partial block
                                    _C, 1, MR);
                 dgeaxpy(mr, nr, _C, 1, MR,
                         &C[i*MR*incRowC+j*NR*incColC], incRowC, incColC);
