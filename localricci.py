@@ -81,7 +81,6 @@ else:
     ax = fig.add_subplot(111, projection='3d')
 graph(threshold)
 
-
 sanitize(sqdist, rescale, CLIP, 1)
 L = Laplacian(sqdist, t)
 Ricci = coarseRicci(L, sqdist)
@@ -145,10 +144,19 @@ if not clustered:
         print 'not clustered at all'
         quit()
 
-plt.ion()
 
 choices = 'rgbmyc'
 colors = [(choices[j] if j < len(choices) else 'k') for j in clust]
 print clust
 print colors
 
+if dim == 2:
+    plt.scatter(pointset[:, 0], pointset[:, 1],  color=colors)
+    plt.axis('equal')
+    plt.show()
+elif dim == 3:
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    data = pointset
+    ax.scatter(data[:,0], data[:,1], data[:, 2],  color=colors)
+    plt.show()

@@ -265,7 +265,8 @@ try:
 
         Implemented in C++ using depth first connected component search.
         """
-        return ctools.clustered(sqdist, threshold)
+        try : return ctools.clustered(sqdist, threshold)
+        except : return is_clustered_old(sqdist, threshold)   #Not really sure why the other try/except doesn't work here, but it was catching so I added this- MW
 except:
     is_clustered = is_clustered_old
 
