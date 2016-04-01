@@ -10,7 +10,7 @@ np.seterr(all="print")  # divide='raise', invalid='raise')
 #   simulation parameters
 #
 runs = 2000  # how many iterations
-show = 5  # how frequently we show the result
+show = 20  # how frequently we show the result
 eta = 0.0075  # factor of Ricci that is added to distance squared
 threshold = 0.001  # clustering threshold
 upperthreshold = 0.3  # won't try to cluster if distances in ambiguity interva (threshold, upperthreshold)
@@ -51,7 +51,7 @@ def graph(threshold):
     # colors for clusters
     for i, v in enumerate(comps):
         # c[v] = i
-        c[v] = sum((pointset[v[0]]-pointset[0])**2)
+        c[v] = np.sqrt(sum((pointset[v[0]]-pointset[0])**2))
     c /= max(c)
     plt.cla()
     if dim == 2:
@@ -63,12 +63,13 @@ def graph(threshold):
                    cmap='gnuplot2')
     plt.draw()
     plt.pause(0.1)
+    return len(comps)
 
 
 
 # sqdist, pointset = noisymoons(300, noise)
 
-sqdist, pointset = two_clusters(200, 48, 10)
+sqdist, pointset = two_clusters(500, 250, 7)
 # sqdist, pointset = perm_circles_200()
 # sqdist, pointset = four_clusters_3d(100,7)
 dim = len(pointset[0])
@@ -81,34 +82,57 @@ else:
     ax = fig.add_subplot(111, projection='3d')
 graph(threshold)
 
-sanitize(sqdist, rescale, CLIP, 1)
-L = Laplacian(sqdist, t)
-Ricci = coarseRicci(L, sqdist)
+#
+#       !!! Memory management !!!
+#
+# We are dealing with many large matrices, but it seems that at most 5 must
+# exist at any given time. And the limit is reached by coarseRicci.
+#
+# It might be best to preallocate them and keep reusing the memory.
+# So no function should create any matrices (vectors are ok).
+# Instead functions should request appropriate number of temporary and out
+# arguments.
+#
+# E.g. Laplacian has an out argument, while Ricci has out and 2 temps.
+#
+# This rather extreme policy will also speed up the code, since no large memory
+# will need to be allocated in the main loop.
+#
 
-print 'initial distance'
-print sqdist
-print 'initial Ricci'
-print Ricci
+L = oldsqdist = np.zeros_like(sqdist)
+Ricci = np.zeros_like(sqdist)
+mat1 = np.zeros_like(sqdist)
+mat2 = np.zeros_like(sqdist)
 
-loosekernel = ne.evaluate('eta*exp(-sqdist/T)')
-applyRicci(sqdist, loosekernel, Ricci, mode='sym')
 
-initial_L1 = sqdist.sum()
-# This will modify Ricci locally more than far away.
+sanitize(sqdist, mat1, rescale, CLIP, 1.0)
+Laplacian(sqdist, t, L)
+coarseRicci(L, sqdist, Ricci, mat1, mat2)
+
+# print 'initial distance'
+# print sqdist
+# print 'initial Ricci'
+# print Ricci
+
+applyRicci(sqdist, eta, T, Ricci, mode='sym')
+sanitize(sqdist, mat1, rescale, CLIP, 1.0)
+
 clustered = False
-oldsqdist = np.copy(sqdist)
+
+# L is the same as sqdist
 for i in range(runs + show + 3):
-    loosekernel[:] = ne.evaluate('eta*exp(-sqdist/T)')
-    L[:] = Laplacian(sqdist, t)
-    Ricci[:] = coarseRicci(L, sqdist)
-    applyRicci(sqdist, loosekernel, Ricci, mode='sym')
+    Laplacian(sqdist, t, L)
+    coarseRicci(L, sqdist, Ricci, mat1, mat2)
+    # now Laplacian is useless, so oldsqdist can replace it
+    np.copyto(oldsqdist, sqdist)
+    applyRicci(sqdist, eta, T, Ricci, mode='sym')
 
     # total_distance = sqdist.sum()
     # sqdist = (total_distance0/total_distance)*sqdist
     # print t
     # ne.evaluate("dist/s", out=dist)
 
-    sanitize(sqdist, rescale, CLIP,  1.0)
+    sanitize(sqdist, mat1, rescale, CLIP,  1.0)
 
     if i % show == 2:
         #print Ricci
@@ -122,7 +146,9 @@ for i in range(runs + show + 3):
         # print np.std(scalar), scalar.mean(), np.std(scalar)/scalar.mean()
         # print scalar
         # print '##########'
-        graph(0.001)
+        numclusters = graph(0.001)
+        if numclusters == 2:
+            break
         # if i>show and is_stuck(sqdist, oldsqdist, eta):  #it was getting falsely stuck very in some situations
         #     print 'stuck!'
         #     clustered
@@ -136,6 +162,7 @@ for i in range(runs + show + 3):
         #     clust = color_clusters(sqdist, threshold)
         #     break
 
+exit(0)
 
 if not clustered:
     if is_clustered(sqdist, threshold):

@@ -175,7 +175,7 @@ try:
         """
         ctools.metricize_dist(dist)
 
-    def metricize5(dist):
+    def metricize5(dist, temp):
         """
         Metricize based on BLIS framework for BLAS.
 
@@ -183,12 +183,16 @@ try:
         """
         ne.evaluate("sqrt(dist)", out=dist)
         error = 1
-        new = dist.copy()
-        while error > 1E-12:
-            ctools.gemm(dist, new)
-            error = ne.evaluate("sum(dist-new)")
-            dist[:, :] = new
+        np.copyto(temp, dist)
+        print 'total', len(dist)**2
+        while error > 1E-10:
+            ctools.gemm(dist, temp)
+            error = ne.evaluate("sum(dist-temp)")
+            #print error,
+            print ne.evaluate("dist>temp+1e-12").sum()
+            dist[:, :] = temp
         ne.evaluate('dist**2', out=dist)
+        print
 
     metricize = metricize5
 except:
@@ -196,15 +200,17 @@ except:
     metricize4 = metricize
 
 
-def sanitize(sqdist,  how='L_inf', clip=np.inf, norm=1.0):
+def sanitize(sqdist, temp, how='L_inf', clip=np.inf, norm=1.0):
     """
     Clean up the distance matrix.
 
     Clip large values, metricize and renormalize.
     """
     # pylama:ignore=W0612
+    print (sqdist<0).sum()
+    print (sqdist>clip).sum()
     np.clip(sqdist, 0.0, clip, out=sqdist)
-    metricize(sqdist)
+    metricize(sqdist, temp)
     try:
         norm = float(norm)
         assert norm > 0.0
@@ -313,7 +319,11 @@ class ToolsTests (unittest.TestCase):
             d2 = d.copy()
             d3 = d.copy()
             metricize2(d)
-            metricize3(d2)
+            try:
+                f(d2)
+            except:
+                temp = d.copy()
+                f(d2, temp)
             print "Changed entries: {} out of {}." \
                 .format(n*n - np.isclose(d, d3).sum(), n*n)
             error = np.max(np.abs(d-d2))
@@ -341,7 +351,11 @@ class ToolsTests (unittest.TestCase):
             d = np.random.rand(n, n)
             d = d + d.T
             np.fill_diagonal(d, 0)
-            test_speed(f, d, repeat=1)
+            if f is metricize5:
+                temp = d.copy()
+                test_speed(f, d, temp, repeat=1)
+            else:
+                test_speed(f, d, repeat=1)
 
     def test_speed_metricize2(self):
         """ Speed of the parallelized metricize. """
