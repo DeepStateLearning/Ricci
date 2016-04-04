@@ -27,7 +27,7 @@ CLIP = 60  # value at which we clip distance function
 np.set_printoptions(precision=2, suppress=True)
 np.set_printoptions(threshold=np.nan)
 
-from tools import sanitize, is_clustered, color_clusters, is_stuck
+from tools import sanitize, is_clustered, color_clusters, is_stuck, components
 from Laplacian import Laplacian
 from Ricci import coarseRicci, applyRicci, getScalar
 from data import noisycircles, noisymoons, two_clusters, perm_moons_200, perm_circles_200, four_clusters_3d
@@ -43,16 +43,20 @@ n_samples = 20
 def graph(threshold):
     """ Draw pointset as colored connected components. """
     global ax
-    c = np.zeros(len(pointset))
-    G = networkx.from_numpy_matrix(sqdist<threshold)
-    comps = list(networkx.connected_component_subgraphs(G))
-    print "Connected components: ", len(comps)
-    comps = [g.nodes() for g in comps]
-    # colors for clusters
-    for i, v in enumerate(comps):
-        # c[v] = i
-        c[v] = np.sqrt(sum((pointset[v[0]]-pointset[0])**2))
-    c /= max(c)
+    c = np.zeros(len(pointset), dtype=int)
+    num = components(sqdist, 0.001, c)
+    print "Number of components: ", num
+    # now c contains uniquely numbered clusters
+
+    # replace colors with distance to a point
+    # component number and a representative
+    values, points = np.unique(c, return_index=True)
+    dists = sqdist[points[0], points-points[0]]
+    c = dists[c]
+    if len(points) < 10:
+        print "Distances between components: \n", sqdist[np.ix_(points, points)]
+    else:
+        print "Distances to component 0: \n", dists
     plt.cla()
     if dim == 2:
         ax.scatter(pointset[:, 0], pointset[:, 1],  c=c, cmap='gnuplot2')
@@ -62,8 +66,8 @@ def graph(threshold):
         ax.scatter(pointset[:, 0], pointset[:, 1], pointset[:, 2],  c=c,
                    cmap='gnuplot2')
     plt.draw()
-    plt.pause(0.1)
-    return len(comps)
+    plt.pause(0.01)
+    return num
 
 
 

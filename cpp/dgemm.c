@@ -11,8 +11,8 @@
 //      https://github.com/michael-lehn/ulmBLAS
 // The above implements the BLIS framework:
 //      https://github.com/flame/blis
-#define MC  384
-#define KC  384
+#define MC  96
+#define KC  256
 #define NC  4096
 
 #define MR  4
@@ -22,7 +22,7 @@
 // new reduction operation
 #define min(x,y)  (((x)<(y)) ? (x) : (y))
 // zero element for the reduction
-#define MAX 1e+300
+#define MAX 1e300
 // new pointwise operation
 #define add(x,y)  ((x)+(y))
 // redefine these to get other generalized inner products
@@ -167,6 +167,7 @@ dgemm_micro_kernel(int kc,
     if (partial) {
         for (j=0; j<NR; ++j) {
             for (i=0; i<MR; ++i) {
+                // this works on private _C array
                 C[i*incRowC+j*incColC] = MAX;
             }
         }
@@ -178,7 +179,11 @@ dgemm_micro_kernel(int kc,
 //
     for (j=0; j<NR; ++j) {
         for (i=0; i<MR; ++i) {
-            C[i*incRowC+j*incColC] = min(AB[i+j*MR], C[i*incRowC+j*incColC]);
+            // omp atomic here? but how with min() and C on both sides
+            // C[i*incRowC+j*incColC] = min(AB[i+j*MR], C[i*incRowC+j*incColC]);
+            // an attempt to avoid conflicts
+            while (C[i*incRowC+j*incColC] > AB[i+j*MR])
+                C[i*incRowC+j*incColC] = AB[i+j*MR];
         }
     }
 }
@@ -199,7 +204,9 @@ dgeaxpy(int           m,
     int i, j;
     for (j=0; j<n; ++j) {
         for (i=0; i<m; ++i) {
-            Y[i*incRowY+j*incColY] = min(X[i*incRowX+j*incColX], Y[i*incRowY+j*incColY]);
+            // omp atomic here? but how with min() and Y on both sides
+            while (Y[i*incRowY+j*incColY] > X[i*incRowX+j*incColX])
+                Y[i*incRowY+j*incColY] = X[i*incRowX+j*incColX];
         }
     }
 }
@@ -229,16 +236,17 @@ dgemm_macro_kernel(int     mc,
     int mr, nr;
     int i, j;
 
-#pragma omp parallel for default(shared) private(i, mr, nr, _C)
+#pragma omp parallel for default(shared) private(j, i, mr, nr, _C)
     for (j=0; j<np; ++j) {
         nr    = (j!=np-1 || _nr==0) ? NR : _nr;
 
+        // diagonal blocks could probably run to smaller value
         for (i=0; i<mp; ++i) {
             mr    = (i!=mp-1 || _mr==0) ? MR : _mr;
 
             if (mr==MR && nr==NR) {
                 dgemm_micro_kernel(kc, &_A[i*kc*MR], &_B[j*kc*NR],
-                                   false,
+                                   false, //full block
                                    &C[i*MR*incRowC+j*NR*incColC],
                                    incRowC, incColC);
             } else { // partial block at the edge
@@ -256,22 +264,18 @@ dgemm_macro_kernel(int     mc,
 //  Compute C <- beta*C + alpha*A*B
 //
 void
-dgemm_nn(int            m,
-         int            n,
-         int            k,
+dgemm_nn(int            n,
          const double   *A,
-         int            incRowA,
-         int            incColA,
-         const double   *B,
-         int            incRowB,
-         int            incColB,
-         double         *C,
-         int            incRowC,
-         int            incColC)
+         double         *C)
 {
+    int k = n, m = n;
     int mb = (m+MC-1) / MC;
     int nb = (n+NC-1) / NC;
     int kb = (k+KC-1) / KC;
+
+    int incRowA = 1, incRowB = 1, incRowC = 1;
+    int incColA = n, incColB = n, incColC = n;
+    const double *B = A;
 
     int _mc = m % MC;
     int _nc = n % NC;
@@ -289,14 +293,13 @@ dgemm_nn(int            m,
             pack_B(kc, nc,
                    &B[l*KC*incRowB+j*NC*incColB], incRowB, incColB,
                    _B);
-
             for (i=0; i<mb; ++i) {
                 mc = (i!=mb-1 || _mc==0) ? MC : _mc;
 
                 pack_A(mc, kc,
                        &A[i*MC*incRowA+l*KC*incColA], incRowA, incColA,
                        _A);
-
+                
                 dgemm_macro_kernel(mc, nc, kc, 
                                    &C[i*MC*incRowC+j*NC*incColC],
                                    incRowC, incColC);

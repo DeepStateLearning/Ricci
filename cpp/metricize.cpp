@@ -8,7 +8,7 @@ std::vector<double> tril;
 tril.resize(r);
 
 // sqdist to dist
-#pragma omp parallel for
+#pragma omp parallel for schedule(static)
 for (int i=0; i<n*n; i++)
     d[i] = sqrt(d[i]);
 
@@ -18,7 +18,7 @@ while (error > 10e-12)
 #pragma omp parallel shared(error)
     {
         double d_ij, dijk, old;
-#pragma omp for reduction(+:error) schedule(static)
+#pragma omp for reduction(max:error) schedule(static, w)
         for (int l=0; l<r; ++l)
         {
             // lower triangle from linear index to improve parallel loop
@@ -38,11 +38,12 @@ while (error > 10e-12)
             }
             if (old>d_ij)
             {
-                error += old-d_ij;
+                if (error < old-d_ij)
+                    error = old-d_ij;
                 tril[l] = d_ij;
             }
         }
-#pragma omp for
+#pragma omp for schedule(static, w)
         for (int l=0; l<r; ++l)
             if (tril[l]>0)
             {

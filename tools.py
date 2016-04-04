@@ -32,7 +32,8 @@ def metricize3(dist):
             new[i, :] = np.amin(dist[i, :, None] + dist, axis=0)
             np.minimum(dist[i, :], new[i, :], out=new[i, :])
             error += np.sum(dist[i, :] - new[i, :])
-        dist[:, :] = new
+            dist[i, :] = new[i, :]
+        print error
     ne.evaluate('dist**2', out=dist)
 
 
@@ -114,20 +115,71 @@ def metricize2(dist):
 # metricize2 runs slowly the first time
 metricize2(np.zeros((16, 16)))
 
+def build_fastmath_extension():
+    """
+    Build fastmath C/C++ extension.
+
+    Requires fast-math, which impacts accuracy, but can be very fast.
+
+    Metricize from this module is much faster than fully optimized SSE BLIS
+    on processors with AVX.
+    """
+    from scipy.weave import ext_tools
+    mod = ext_tools.ext_module('ctools_fastmath')
+    # type declarations
+    d = np.zeros((2, 2))
+    d2 = np.zeros((2, 2))
+
+    # metricize via BLIS framework
+    with open('cpp/dgemm.c', 'r') as f:
+        support_code = f.read()
+    with open('cpp/metricize_dgemm.c', 'r') as f:
+        code = f.read()
+    func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2'])
+    func.customize.add_support_code(support_code)
+    mod.add_function(func)
+    # mod.customize.add_header('<omp.h>')
+    mod.customize.add_header('<cmath>')
+    mod.customize.add_header('<x86intrin.h>')
+    mod.compile(extra_compile_args=["-O3 -fopenmp", "-march=native",
+                                    "-fomit-frame-pointer", "-ffast-math",
+                                    "-mfpmath=sse"],
+                verbose=2, libraries=['gomp'],
+                )
 
 def build_extension():
-    """ Build C++ extension module ctools. """
+    """
+    Build C/C++ extension module ctools.
+
+    """
     from scipy.weave import ext_tools
     mod = ext_tools.ext_module('ctools')
     # type declarations
     d = np.zeros((2, 2))
     d2 = np.zeros((2, 2))
     threshold = 0.5
+    colors = np.zeros(2, dtype=int)
 
-    # metricize using unrolled triangular loop
+    # metricize using fully parallelized triangular loop
+    # this function is actually slower with fastmath (when avx2 is used? a bug?)
     with open('cpp/metricize.cpp', 'r') as f:
         code = f.read()
-    func = ext_tools.ext_function('metricize_dist', code, ['d'])
+    func = ext_tools.ext_function('metricize', code, ['d'])
+    mod.add_function(func)
+
+    # metricize using fully parallelized triangular loop
+    with open('cpp/metricize_random.cpp', 'r') as f:
+        code = f.read()
+    func = ext_tools.ext_function('metricize_random', code, ['d'])
+    mod.add_function(func)
+
+    # find connected components and number them
+    # fills last argument with component numbers for vertices
+    # returns number of components
+    with open('cpp/components.cpp', 'r') as f:
+        code = f.read()
+    func = ext_tools.ext_function('components', code,
+                                  ['d', 'threshold', 'colors'])
     mod.add_function(func)
 
     # check if clustered function
@@ -140,23 +192,21 @@ def build_extension():
     mod.add_function(func)
 
     # metricize via BLIS framework
-    with open('cpp/dgemm.c', 'r') as f:
+    with open('cpp/dgemm_asm_sse.c', 'r') as f:
         support_code = f.read()
-    func = ext_tools.ext_function('gemm', """
-    int n = Nd[0];
-    dgemm_nn(n, n, n, d, 1, n, d, 1, n, d2, 1, n);
-    """, ['d', 'd2'])
+    with open('cpp/metricize_dgemm.c', 'r') as f:
+        code = f.read()
+    func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2'])
     func.customize.add_support_code(support_code)
     mod.add_function(func)
     # mod.customize.add_header('<omp.h>')
     mod.customize.add_header('<vector>')
     mod.customize.add_header('<cmath>')
     mod.customize.add_header('<x86intrin.h>')
-    mod.compile(extra_compile_args=["-O3 -fopenmp -march=native",
-                                    "-fomit-frame-pointer -ffast-math"],
+    mod.compile(extra_compile_args=["-O3 -fopenmp", "-march=native",
+                                    "-fomit-frame-pointer", # "-ffast-math",
+                                    "-mfpmath=sse"],
                 verbose=2, libraries=['gomp'],
-                # library_dirs=['/usr/local/lib'],
-                # include_dirs=['/usr/local/include']
                 )
 
 
@@ -165,7 +215,9 @@ metricize = metricize3
 # replace wih C++ if possible
 try:
     build_extension()
+    build_fastmath_extension()
     import ctools
+    import ctools_fastmath
 
     def metricize4(dist):
         """
@@ -173,7 +225,15 @@ try:
 
         C++ extension leveraging matrix symmetry and OpenMP.
         """
-        ctools.metricize_dist(dist)
+        ctools.metricize(dist)
+
+    def metricize4b(dist):
+        """
+        Metricize a matrix of "squared distances".
+
+        C++ extension leveraging matrix symmetry and OpenMP.
+        """
+        ctools.metricize_random(dist)
 
     def metricize5(dist, temp):
         """
@@ -181,20 +241,26 @@ try:
 
         Modified ulmBLAS code for dgemm_nn.
         """
-        ne.evaluate("sqrt(dist)", out=dist)
-        error = 1
-        np.copyto(temp, dist)
-        print 'total', len(dist)**2
-        while error > 1E-10:
-            ctools.gemm(dist, temp)
-            error = ne.evaluate("sum(dist-temp)")
-            #print error,
-            print ne.evaluate("dist>temp+1e-12").sum()
-            dist[:, :] = temp
-        ne.evaluate('dist**2', out=dist)
-        print
+        ctools.metricize_gemm(dist, temp)
 
-    metricize = metricize5
+    def metricize5b(dist, temp):
+        """
+        Metricize based on BLIS framework for BLAS.
+
+        Modified ulmBLAS code for dgemm_nn.
+        """
+        ctools_fastmath.metricize_gemm(dist, temp)
+
+    def components(dist, threshold, colors):
+        """
+        Find connected components (connected if value<threshold).
+
+        Returns number of components and fills colors array with
+        numbers (colors) for vertices.
+        """
+        return ctools.components(dist, threshold, colors)
+
+    metricize = metricize5b
 except:
     print "   !!! Error: C++ extension failed to build !!!   "
     metricize4 = metricize
@@ -207,10 +273,9 @@ def sanitize(sqdist, temp, how='L_inf', clip=np.inf, norm=1.0):
     Clip large values, metricize and renormalize.
     """
     # pylama:ignore=W0612
-    print (sqdist<0).sum()
-    print (sqdist>clip).sum()
     np.clip(sqdist, 0.0, clip, out=sqdist)
     metricize(sqdist, temp)
+    # metricize4b(sqdist)
     try:
         norm = float(norm)
         assert norm > 0.0
@@ -271,8 +336,7 @@ try:
 
         Implemented in C++ using depth first connected component search.
         """
-        try : return ctools.clustered(sqdist, threshold)
-        except : return is_clustered_old(sqdist, threshold)   #Not really sure why the other try/except doesn't work here, but it was catching so I added this- MW
+        return ctools.clustered(sqdist, threshold)
 except:
     is_clustered = is_clustered_old
 
@@ -370,6 +434,10 @@ class ToolsTests (unittest.TestCase):
         self.speed(metricize4)
         self.speed(metricize4, 500)
 
+    def test_speed_metricize4b(self):
+        """ Speed of the random C++ metricize. """
+        self.speed(metricize4b)
+
     def test_speed_metricize5(self):
         """ Speed of the BLIS metricize. """
         self.speed(metricize5)
@@ -397,5 +465,60 @@ class ToolsTests (unittest.TestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
-    unittest.TextTestRunner(verbosity=2).run(suite)
+    # suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
+    # unittest.TextTestRunner(verbosity=2).run(suite)
+
+
+    n = 10
+    d = np.random.rand(n, n)
+    d = d + d.T
+    np.fill_diagonal(d, 0)
+    colors = np.zeros(n)
+    import ctools
+    print ctools.components(d, 0.5, colors)
+    print colors
+
+    print d<0.5
+    exit(0)
+    for _ in range(2):
+        for n in range(400,500,7):
+            print n
+            d = np.random.rand(n, n)
+            d = d + d.T
+            np.fill_diagonal(d, 0)
+            d2 = d.copy()
+            d3 = d.copy()
+            metricize4(d)
+            temp = d.copy()
+            # print np.sqrt(d3)
+            metricize5(d2, temp)
+            metricize5b(d3, temp)
+            # print np.sqrt(d)
+            # print np.sqrt(d2)
+            assert np.allclose(d, d2)
+            assert np.allclose(d3, d2)
+
+    from datetime import datetime
+
+    for n in range(1000,3000,500):
+        print n
+        d = np.random.rand(n, n)
+        d = d + d.T
+        np.fill_diagonal(d, 0)
+        d2 = d.copy()
+        d3 = d.copy()
+        start = datetime.now()
+        metricize4(d)
+        print datetime.now()-start
+        temp = d.copy()
+        # print np.sqrt(d3)
+        start = datetime.now()
+        metricize5(d2, temp)
+        print datetime.now()-start
+        start = datetime.now()
+        metricize5b(d3, temp)
+        print datetime.now()-start
+        # print np.sqrt(d)
+        # print np.sqrt(d2)
+        assert np.allclose(d, d2)
+        assert np.allclose(d3, d2)
