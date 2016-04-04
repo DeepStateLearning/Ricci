@@ -115,6 +115,7 @@ def metricize2(dist):
 # metricize2 runs slowly the first time
 metricize2(np.zeros((16, 16)))
 
+
 def build_fastmath_extension():
     """
     Build fastmath C/C++ extension.
@@ -147,10 +148,16 @@ def build_fastmath_extension():
                 verbose=2, libraries=['gomp'],
                 )
 
+
 def build_extension():
     """
     Build C/C++ extension module ctools.
 
+    Contains:
+        - metricize with fully parallelized triangular loop
+        - somewhat random metricize
+        - connected components
+        - clustered check
     """
     from scipy.weave import ext_tools
     mod = ext_tools.ext_module('ctools')
@@ -192,6 +199,7 @@ def build_extension():
     mod.add_function(func)
 
     # metricize via BLIS framework
+    # FIXME add avx kernel
     with open('cpp/dgemm_asm_sse.c', 'r') as f:
         support_code = f.read()
     with open('cpp/metricize_dgemm.c', 'r') as f:
@@ -204,7 +212,7 @@ def build_extension():
     mod.customize.add_header('<cmath>')
     mod.customize.add_header('<x86intrin.h>')
     mod.compile(extra_compile_args=["-O3 -fopenmp", "-march=native",
-                                    "-fomit-frame-pointer", # "-ffast-math",
+                                    "-fomit-frame-pointer",
                                     "-mfpmath=sse"],
                 verbose=2, libraries=['gomp'],
                 )
@@ -253,7 +261,7 @@ try:
 
     def components(dist, threshold, colors):
         """
-        Find connected components (connected if value<threshold).
+        Find connected components based on closeness threshold.
 
         Returns number of components and fills colors array with
         numbers (colors) for vertices.
@@ -382,7 +390,7 @@ class ToolsTests (unittest.TestCase):
             np.fill_diagonal(d, 0)
             d2 = d.copy()
             d3 = d.copy()
-            metricize2(d)
+            metricize3(d)
             try:
                 f(d2)
             except:
@@ -404,7 +412,11 @@ class ToolsTests (unittest.TestCase):
         self.correct(metricize4)
 
     def test_metricize5(self):
-        """ Test metricize5 (C++ BLIS) against metricize3 (numpy). """
+        """ Test metricize5 (C, asm, and BLIS) against metricize3 (numpy). """
+        self.correct(metricize5)
+
+    def test_metricize5b(self):
+        """ Test metricize5b (pure C and BLIS) against metricize3 (numpy). """
         self.correct(metricize5)
 
     def speed(self, f, s=200):
@@ -415,7 +427,7 @@ class ToolsTests (unittest.TestCase):
             d = np.random.rand(n, n)
             d = d + d.T
             np.fill_diagonal(d, 0)
-            if f is metricize5:
+            if f in (metricize5, metricize5b):
                 temp = d.copy()
                 test_speed(f, d, temp, repeat=1)
             else:
@@ -439,9 +451,17 @@ class ToolsTests (unittest.TestCase):
         self.speed(metricize4b)
 
     def test_speed_metricize5(self):
-        """ Speed of the BLIS metricize. """
+        """ Speed of the C and asm BLIS metricize. """
         self.speed(metricize5)
         self.speed(metricize5, 500)
+        A = np.random.rand(1500, 1500)
+        print "Same size np.dot(A, A) (metricize does a few multiplications):"
+        test_speed(np.dot, A, A, repeat=1)
+
+    def test_speed_metricize5b(self):
+        """ Speed of the pure C BLIS metricize. """
+        self.speed(metricize5b)
+        self.speed(metricize5b, 500)
         A = np.random.rand(1500, 1500)
         print "Same size np.dot(A, A) (metricize does a few multiplications):"
         test_speed(np.dot, A, A, repeat=1)
@@ -465,60 +485,6 @@ class ToolsTests (unittest.TestCase):
 
 
 if __name__ == "__main__":
-    # suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
-    # unittest.TextTestRunner(verbosity=2).run(suite)
-
-
-    n = 10
-    d = np.random.rand(n, n)
-    d = d + d.T
-    np.fill_diagonal(d, 0)
-    colors = np.zeros(n)
-    import ctools
-    print ctools.components(d, 0.5, colors)
-    print colors
-
-    print d<0.5
-    exit(0)
-    for _ in range(2):
-        for n in range(400,500,7):
-            print n
-            d = np.random.rand(n, n)
-            d = d + d.T
-            np.fill_diagonal(d, 0)
-            d2 = d.copy()
-            d3 = d.copy()
-            metricize4(d)
-            temp = d.copy()
-            # print np.sqrt(d3)
-            metricize5(d2, temp)
-            metricize5b(d3, temp)
-            # print np.sqrt(d)
-            # print np.sqrt(d2)
-            assert np.allclose(d, d2)
-            assert np.allclose(d3, d2)
-
-    from datetime import datetime
-
-    for n in range(1000,3000,500):
-        print n
-        d = np.random.rand(n, n)
-        d = d + d.T
-        np.fill_diagonal(d, 0)
-        d2 = d.copy()
-        d3 = d.copy()
-        start = datetime.now()
-        metricize4(d)
-        print datetime.now()-start
-        temp = d.copy()
-        # print np.sqrt(d3)
-        start = datetime.now()
-        metricize5(d2, temp)
-        print datetime.now()-start
-        start = datetime.now()
-        metricize5b(d3, temp)
-        print datetime.now()-start
-        # print np.sqrt(d)
-        # print np.sqrt(d2)
-        assert np.allclose(d, d2)
-        assert np.allclose(d3, d2)
+    # FIXME add missing tests for components
+    suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
+    unittest.TextTestRunner(verbosity=2).run(suite)
