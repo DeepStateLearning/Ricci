@@ -19,7 +19,7 @@ def add_AB_to_C(A, B, C):
     assert D.base is C
 
 
-def applyRicci(sqdist, eta, Ricci, mode='sym'):
+def applyRicci(sqdist, eta, T, Ricci, mode='sym'):
     """
     Apply coarse Ricci to a squared distance matrix.
 
@@ -28,15 +28,16 @@ def applyRicci(sqdist, eta, Ricci, mode='sym'):
     Note: eta can be a localizing kernel too.
     """
     if 'sym' in mode:
-        ne.evaluate('sqdist - (eta/2)*(Ricci+RicciT)',
+        ne.evaluate('sqdist - (eta/2)*exp(-sqdist/T)*(Ricci+RicciT)',
                     global_dict={'RicciT': Ricci.T}, out=sqdist)
     elif 'max' in mode:
-        ne.evaluate('sqdist - eta*where(Ricci<RicciT, RicciT, Ricci)',
-                    global_dict={'RicciT': Ricci.T}, out=sqdist)
+        ne.evaluate(
+            'sqdist - eta*exp(-sqdist/T)*where(Ricci<RicciT, RicciT, Ricci)',
+            global_dict={'RicciT': Ricci.T}, out=sqdist)
     elif 'dumb' in mode:
-        ne.evaluate('sqdist - eta*sqdist', out=sqdist)
+        ne.evaluate('sqdist*(1 - eta*exp(-sqdist/T))', out=sqdist)
     else:
-        ne.evaluate('sqdist - eta*Ricci',
+        ne.evaluate('sqdist - eta*exp(-sqdist/T)*Ricci',
                     global_dict={'RicciT': Ricci.T}, out=sqdist)
 
 
@@ -113,7 +114,7 @@ def coarseRicci3(L, sqdist):
     return Ric
 
 
-def coarseRicci4(L, sqdist):
+def coarseRicci4(L, sqdist, R, A, B):
     """
     Fully optimized Ricci matrix computation.
 
@@ -123,15 +124,14 @@ def coarseRicci4(L, sqdist):
     Uses full gemm functionality to avoid creating intermediate matrices.
 
     Running time is O(n^3) as opposed to other implementations' O(n^4).
+
+    R is the output array, while A and B are temporary matrices.
     """
-    # It should be possible to improve the multiplications using dsymm, dsyrk.
-    # But dsymm is not faster than dgemm.
-    # And dsyrk can only help with L*L
     D = sqdist
     C = ne.evaluate("D*D/4.0")
-    A = L.dot(L)
-    R = A.dot(C)
-    B = L.dot(D)
+    L.dot(L, out=A)
+    A.dot(C, out=R)
+    L.dot(D, out=B)
     ne.evaluate("-D*B", out=C)
     add_AB_to_C(L, C, R)
     L.dot(B, out=C)
@@ -148,16 +148,15 @@ def coarseRicci4(L, sqdist):
     add_AB_to_C(C, B, R)
     # done!
     np.fill_diagonal(R, 0.0)
-    return R
 
-    
+
 def getScalar(Ricci, sqdist, t):
     kernel = ne.evaluate("exp(-sqdist/t)")
     Scalar = np.diag(Ricci.dot(kernel))
     density = kernel.sum(axis=1)
     Scalar = ne.evaluate("Scalar/density")
     return Scalar
-    
+
 # currently best method
 coarseRicci = coarseRicci4
 

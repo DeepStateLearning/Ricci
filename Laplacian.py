@@ -1,24 +1,24 @@
 """ Approximate Laplace matrix via heat kernel. """
 
+import numexpr as ne
 import numpy as np
 import scipy.misc as sm
 
 
-def computeLaplaceMatrix2(sqdist, t):
+def computeLaplaceMatrix2(sqdist, t, L):
     """
     Compute heat approximation to Laplacian matrix using logarithms.
 
     This is faster, but not as accurate.
     """
     lt = np.log(2 / t)
-    L = sqdist / (-2.0 * t)  # copy of sqdist is needed here anyway
+    ne.evaluate('sqdist / (-2.0 * t)', out=L)
     # numpy floating point errors likely below
-    logdensity = sm.logsumexp(L, axis=1)
+    logdensity = sm.logsumexp(L, axis=1)[:, None]
     # sum in rows must be 1, except for 2/t factor
-    L = np.exp(L - logdensity[:, None] + lt)
+    ne.evaluate('exp(L - logdensity + lt)', out=L)
     # fix diagonal to account for -f(x)?
     L[np.diag_indices(len(L))] -= 2.0 / t
-    return L
 
 try:
     # gmpy2 setup for numpy object arrays

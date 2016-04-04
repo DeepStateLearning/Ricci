@@ -52,7 +52,7 @@ def two_clusters(k, l, sep, dim=2):
     Z = Z[Z[:, 0].argsort()]
     return cdist(Z, Z, 'sqeuclidean'), Z
 
-    
+
 def four_clusters_3d(k, sep, dim=3):
     """
     Return squared distances for two clusters from normal distribution.
@@ -62,8 +62,9 @@ def four_clusters_3d(k, sep, dim=3):
     """
     Z = np.random.normal(size=(4*k, dim))
     Z[0:k, 0] += sep
-    Z[k:2*k, 1] += sep
-    Z[2*k:3*k, 2] += sep
+    Z[k:2*k, 1] += 2*sep
+    Z[2*k:3*k, 2] += 4*sep
+    Z = np.random.permutation(Z)
     return cdist(Z, Z, 'sqeuclidean'), Z
 
 
@@ -83,20 +84,20 @@ def cyclegraph(n, noise):
     dist = dist + ndist + ndist.transpose()
     return dist, None
 
-    
+
 def perm_moons_200():
-    print 'noisy moons with 200 points noise = 0.05' 
+    print 'noisy moons with 200 points noise = 0.05'
     pointset = np.load('nm1.npy', False)
     sqdist = cdist(pointset, pointset, 'sqeuclidean')
     return sqdist, pointset
-    
+
 
 def perm_circles_200():
-    print 'noisy circles with 200 points noise = 0.05, factor = .5' 
+    print 'noisy circles with 200 points noise = 0.05, factor = .5'
     pointset = np.load('nc1.npy', False)
     sqdist = cdist(pointset, pointset, 'sqeuclidean')
     return sqdist, pointset
-    
+
 
 def closefarsimplices(n, noise, separation):
     """
