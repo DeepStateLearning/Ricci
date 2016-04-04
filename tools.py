@@ -6,6 +6,14 @@ import numexpr as ne
 from numba import jit
 import threading
 
+# check SIMD extensions:
+# gcc -march=native -dM -E - < /dev/null | egrep "SSE|AVX" | sort
+# number of physical cpus (for number of threads in mat-mat mult)
+# Mac: sysctl hw.physicalcpu | cut -d\  -f2
+# Linux: lscpu | grep "Core(s)" | grep -o "[0-9]*$"
+# Anaconda: import mkl; mkl.get_max_threads()
+# use that to compile appropriate kernel
+
 
 def test_speed(f, *args, **kwargs):
     """ Test the speed of a function. """
@@ -33,7 +41,6 @@ def metricize3(dist):
             np.minimum(dist[i, :], new[i, :], out=new[i, :])
             error += np.sum(dist[i, :] - new[i, :])
             dist[i, :] = new[i, :]
-        print error
     ne.evaluate('dist**2', out=dist)
 
 
@@ -127,6 +134,9 @@ def build_fastmath_extension():
     """
     from scipy.weave import ext_tools
     mod = ext_tools.ext_module('ctools_fastmath')
+    # number of physical cpus
+    import mkl
+    ncpus = mkl.get_max_threads()
     # type declarations
     d = np.zeros((2, 2))
     d2 = np.zeros((2, 2))
@@ -139,10 +149,11 @@ def build_fastmath_extension():
     func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2'])
     func.customize.add_support_code(support_code)
     mod.add_function(func)
-    # mod.customize.add_header('<omp.h>')
+    mod.customize.add_header('<omp.h>')
     mod.customize.add_header('<cmath>')
     mod.customize.add_header('<x86intrin.h>')
-    mod.compile(extra_compile_args=["-O3 -fopenmp", "-march=native",
+    mod.compile(extra_compile_args=["-O3 -DNUMCORE={}".format(ncpus),
+                                    "-fopenmp -march=native",
                                     "-fomit-frame-pointer", "-ffast-math",
                                     "-mfpmath=sse"],
                 verbose=2, libraries=['gomp'],
@@ -161,6 +172,10 @@ def build_extension():
     """
     from scipy.weave import ext_tools
     mod = ext_tools.ext_module('ctools')
+    # number of physical cpus
+    import mkl
+    ncpus = mkl.get_max_threads()
+    print "Number of physical cores: ", ncpus
     # type declarations
     d = np.zeros((2, 2))
     d2 = np.zeros((2, 2))
@@ -200,18 +215,19 @@ def build_extension():
 
     # metricize via BLIS framework
     # FIXME add avx kernel
-    with open('cpp/dgemm_asm_sse.c', 'r') as f:
+    with open('cpp/dgemm.c', 'r') as f:
         support_code = f.read()
     with open('cpp/metricize_dgemm.c', 'r') as f:
         code = f.read()
     func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2'])
     func.customize.add_support_code(support_code)
     mod.add_function(func)
-    # mod.customize.add_header('<omp.h>')
+    mod.customize.add_header('<omp.h>')
     mod.customize.add_header('<vector>')
     mod.customize.add_header('<cmath>')
     mod.customize.add_header('<x86intrin.h>')
-    mod.compile(extra_compile_args=["-O3 -fopenmp", "-march=native",
+    mod.compile(extra_compile_args=["-O3 -DNUMCORE={}".format(ncpus),
+                                    "-fopenmp -march=native",
                                     "-fomit-frame-pointer",
                                     "-mfpmath=sse"],
                 verbose=2, libraries=['gomp'],
@@ -488,3 +504,11 @@ if __name__ == "__main__":
     # FIXME add missing tests for components
     suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
     unittest.TextTestRunner(verbosity=2).run(suite)
+    # ToolsTests.runTest = lambda self: True
+    # t = ToolsTests()
+    # t.test_metricize4()
+    # t.test_metricize5()
+    # t.test_metricize5b()
+    # t.test_speed_metricize4()
+    # t.test_speed_metricize5()
+    # t.test_speed_metricize5b()

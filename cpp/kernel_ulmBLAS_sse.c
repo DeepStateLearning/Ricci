@@ -1,135 +1,10 @@
-// dgemm turned into metricize as weave extension
-// Computes C += A*B
-// but with pointwise * replaced with +
-// and + replaced with min(x,y)
-//
-// Other changes:
-// - added OpenMp in macro kernel
-// 
-// Based on fully optimized dgemm from:
-//      https://github.com/michael-lehn/ulmBLAS
-// The above implements the BLIS framework:
-//      https://github.com/flame/blis
-#define MC  96
-#define KC  256
-#define NC  4096
-
+// Modified fully optimized ulmBLAS micro kernel
 #define MR  4
 #define NR  4
 
-// generalized inner product
-// new reduction operation
-#define min(x,y)  (((x)<(y)) ? (x) : (y))
-// zero element for the reduction
-#define MAX 1e+300
-// new pointwise operation
-#define add(x,y)  ((x)+(y))
-// redefine these to get other generalized inner products
-
-//
-//  Local buffers for storing panels from A, B and C
-//
 static double _A[MC*KC] __attribute__ ((aligned (16)));
 static double _B[KC*NC] __attribute__ ((aligned (16)));
 static double _C[MR*NR] __attribute__ ((aligned (16)));
-
-//
-//  Packing complete panels from A (i.e. without padding)
-//
-static void
-pack_MRxk(int k, const double *A, int incRowA, int incColA,
-          double *buffer)
-{
-    int i, j;
-
-    for (j=0; j<k; ++j) {
-        for (i=0; i<MR; ++i) {
-            buffer[i] = A[i*incRowA];
-        }
-        buffer += MR;
-        A      += incColA;
-    }
-}
-
-//
-//  Packing panels from A with padding if required
-//
-static void
-pack_A(int mc, int kc, const double *A, int incRowA, int incColA,
-       double *buffer)
-{
-    int mp  = mc / MR;
-    int _mr = mc % MR;
-
-    int i, j;
-
-    for (i=0; i<mp; ++i) {
-        pack_MRxk(kc, A, incRowA, incColA, buffer);
-        buffer += kc*MR;
-        A      += MR*incRowA;
-    }
-    if (_mr>0) {
-        for (j=0; j<kc; ++j) {
-            for (i=0; i<_mr; ++i) {
-                buffer[i] = A[i*incRowA];
-            }
-            for (i=_mr; i<MR; ++i) {
-                buffer[i] = MAX;
-            }
-            buffer += MR;
-            A      += incColA;
-        }
-    }
-}
-
-//
-//  Packing complete panels from B (i.e. without padding)
-//
-static void
-pack_kxNR(int k, const double *B, int incRowB, int incColB,
-          double *buffer)
-{
-    int i, j;
-
-    for (i=0; i<k; ++i) {
-        for (j=0; j<NR; ++j) {
-            buffer[j] = B[j*incColB];
-        }
-        buffer += NR;
-        B      += incRowB;
-    }
-}
-
-//
-//  Packing panels from B with padding if required
-//
-static void
-pack_B(int kc, int nc, const double *B, int incRowB, int incColB,
-       double *buffer)
-{
-    int np  = nc / NR;
-    int _nr = nc % NR;
-
-    int i, j;
-
-    for (j=0; j<np; ++j) {
-        pack_kxNR(kc, B, incRowB, incColB, buffer);
-        buffer += kc*NR;
-        B      += NR*incColB;
-    }
-    if (_nr>0) {
-        for (i=0; i<kc; ++i) {
-            for (j=0; j<_nr; ++j) {
-                buffer[j] = B[j*incColB];
-            }
-            for (j=_nr; j<NR; ++j) {
-                buffer[j] = MAX;
-            }
-            buffer += NR;
-            B      += incRowB;
-        }
-    }
-}
 
 //
 //  Micro kernel for multiplying panels from A and B.
@@ -144,16 +19,12 @@ dgemm_micro_kernel(long kc,
     long kb = kc / 4;
     long kl = kc % 4;
     double beta = partial ? MAX : 0.0;
-    double alpha = 0.0;
+    double alpha = MAX; // used to transfer MAX to registers
 //
 //  Compute AB = A*B
 //
 __asm__ volatile
     (
-    "mov   $0x7EFFFFFF, %%eax    \n\t" // create MAX in xmm8
-    "movd      %%eax,   %%xmm8   \n\t"
-    "shufps $0,%%xmm8,  %%xmm8   \n\t"  // now MAX in xmm8
-    "                                " 
     "movq      %0,      %%rsi    \n\t"  // kb (32 bit) stored in %rsi
     "movq      %1,      %%rdi    \n\t"  // kl (32 bit) stored in %rdi
     "movq      %2,      %%rax    \n\t"  // Address of A stored in %rax
@@ -168,7 +39,8 @@ __asm__ volatile
     "movapd -112(%%rax),%%xmm1   \n\t"  // tmp1 = _mm_load_pd(A+2)
     "movapd -128(%%rbx),%%xmm2   \n\t"  // tmp2 = _mm_load_pd(B)
     "                            \n\t"
-    //"movhlps   %%xmm8,  %%xmm8   \n\t"  // ab_00_11 = MAX
+    "movsd  %4,         %%xmm8   \n\t"  // load alpha
+    "unpcklpd  %%xmm8,  %%xmm8   \n\t"  // ab_00_11 = MAX
     "movapd    %%xmm8,  %%xmm9   \n\t"  // ab_20_31 = MAX
     "movapd    %%xmm8,  %%xmm10  \n\t"  // ab_01_10 = MAX
     "movapd    %%xmm9,  %%xmm11  \n\t"  // ab_21_30 = MAX
@@ -413,7 +285,6 @@ __asm__ volatile
 //  Update C <- beta*C + alpha*AB
 //
 //
-    "movsd  %4,                  %%xmm0 \n\t"  // load alpha
     "movsd  %5,                  %%xmm1 \n\t"  // load beta 
     "movq   %6,                  %%rcx  \n\t"  // Address of C stored in %rcx
 
@@ -426,13 +297,12 @@ __asm__ volatile
     "leaq (%%rcx,%%r8,2),        %%rdx  \n\t"  // Store addr of C20 in %rdx
     "leaq (%%rdx,%%r9),          %%r11  \n\t"  // Store addr of C21 in %r11
     "                                   \n\t"
-    "unpcklpd %%xmm0,            %%xmm0 \n\t"  // duplicate alpha
     "unpcklpd %%xmm1,            %%xmm1 \n\t"  // duplicate beta
     "                                   \n\t"
     "                                   \n\t"
     "movlpd (%%rcx),             %%xmm3 \n\t"  // load (C00,
     "movhpd (%%r10,%%r8),        %%xmm3 \n\t"  //       C11)
-    "addpd  %%xmm0,              %%xmm8 \n\t"  // scale ab_00_11 by alpha
+    //"addpd  %%xmm0,              %%xmm8 \n\t"  // scale ab_00_11 by alpha
     "addpd  %%xmm1,              %%xmm3 \n\t"  // scale (C00, C11) by beta
     "minpd  %%xmm8,              %%xmm3 \n\t"  // add results
 
@@ -441,7 +311,7 @@ __asm__ volatile
     "                                   \n\t"
     "movlpd (%%rdx),             %%xmm4 \n\t"  // load (C20,
     "movhpd (%%r11,%%r8),        %%xmm4 \n\t"  //       C31)
-    "addpd  %%xmm0,              %%xmm9 \n\t"  // scale ab_20_31 by alpha
+    //"addpd  %%xmm0,              %%xmm9 \n\t"  // scale ab_20_31 by alpha
     "addpd  %%xmm1,              %%xmm4 \n\t"  // scale (C20, C31) by beta
     "minpd  %%xmm9,              %%xmm4 \n\t"  // add results
     "movlpd %%xmm4,        (%%rdx)       \n\t"  // write back (C20,
@@ -450,7 +320,7 @@ __asm__ volatile
     "                                   \n\t"
     "movlpd (%%r10),             %%xmm3 \n\t"  // load (C01,
     "movhpd (%%rcx,%%r8),        %%xmm3 \n\t"  //       C10)
-    "addpd  %%xmm0,              %%xmm10\n\t"  // scale ab_01_10 by alpha
+    //"addpd  %%xmm0,              %%xmm10\n\t"  // scale ab_01_10 by alpha
     "addpd  %%xmm1,              %%xmm3 \n\t"  // scale (C01, C10) by beta
     "minpd  %%xmm10,             %%xmm3 \n\t"  // add results
     "movlpd %%xmm3,        (%%r10)      \n\t"  // write back (C01,
@@ -458,7 +328,7 @@ __asm__ volatile
     "                                   \n\t"
     "movlpd (%%r11),             %%xmm4 \n\t"  // load (C21,
     "movhpd (%%rdx,%%r8),        %%xmm4 \n\t"  //       C30)
-    "addpd  %%xmm0,              %%xmm11\n\t"  // scale ab_21_30 by alpha
+    //"addpd  %%xmm0,              %%xmm11\n\t"  // scale ab_21_30 by alpha
     "addpd  %%xmm1,              %%xmm4 \n\t"  // scale (C21, C30) by beta
     "minpd  %%xmm11,             %%xmm4 \n\t"  // add results
     "movlpd %%xmm4,        (%%r11)      \n\t"  // write back (C21,
@@ -473,7 +343,7 @@ __asm__ volatile
     "                                   \n\t"
     "movlpd (%%rcx),             %%xmm3 \n\t"  // load (C02,
     "movhpd (%%r10,%%r8),        %%xmm3 \n\t"  //       C13)
-    "addpd  %%xmm0,              %%xmm12\n\t"  // scale ab_02_13 by alpha
+    //"addpd  %%xmm0,              %%xmm12\n\t"  // scale ab_02_13 by alpha
     "addpd  %%xmm1,              %%xmm3 \n\t"  // scale (C02, C13) by beta
     "minpd  %%xmm12,             %%xmm3 \n\t"  // add results
     "movlpd %%xmm3,        (%%rcx)      \n\t"  // write back (C02,
@@ -481,7 +351,7 @@ __asm__ volatile
     "                                   \n\t"
     "movlpd (%%rdx),             %%xmm4 \n\t"  // load (C22,
     "movhpd (%%r11, %%r8),       %%xmm4 \n\t"  //       C33)
-    "addpd  %%xmm0,              %%xmm13\n\t"  // scale ab_22_33 by alpha
+    //"addpd  %%xmm0,              %%xmm13\n\t"  // scale ab_22_33 by alpha
     "addpd  %%xmm1,              %%xmm4 \n\t"  // scale (C22, C33) by beta
     "minpd  %%xmm13,             %%xmm4 \n\t"  // add results
     "movlpd %%xmm4,             (%%rdx) \n\t"  // write back (C22,
@@ -490,7 +360,7 @@ __asm__ volatile
     "                                   \n\t"
     "movlpd (%%r10),             %%xmm3 \n\t"  // load (C03,
     "movhpd (%%rcx,%%r8),        %%xmm3 \n\t"  //       C12)
-    "addpd  %%xmm0,              %%xmm14\n\t"  // scale ab_03_12 by alpha
+    //"addpd  %%xmm0,              %%xmm14\n\t"  // scale ab_03_12 by alpha
     "addpd  %%xmm1,              %%xmm3 \n\t"  // scale (C03, C12) by beta
     "minpd  %%xmm14,             %%xmm3 \n\t"  // add results
     "movlpd %%xmm3,        (%%r10)      \n\t"  // write back (C03,
@@ -498,7 +368,7 @@ __asm__ volatile
     "                                   \n\t"
     "movlpd (%%r11),             %%xmm4 \n\t"  // load (C23,
     "movhpd (%%rdx,%%r8),        %%xmm4 \n\t"  //       C32)
-    "addpd  %%xmm0,              %%xmm15\n\t"  // scale ab_23_32 by alpha
+    //"addpd  %%xmm0,              %%xmm15\n\t"  // scale ab_23_32 by alpha
     "addpd  %%xmm1,              %%xmm4 \n\t"  // scale (C23, C32) by beta
     "minpd  %%xmm15,             %%xmm4 \n\t"  // add results
     "movlpd %%xmm4,        (%%r11)      \n\t"  // write back (C23,
@@ -524,141 +394,3 @@ __asm__ volatile
         "xmm12", "xmm13", "xmm14", "xmm15"
     );
 }
-
-//
-//  Compute Y += alpha*X
-//
-static void
-dgeaxpy(int           m,
-        int           n,
-        const double  *X,
-        int           incRowX,
-        int           incColX,
-        double        *Y,
-        int           incRowY,
-        int           incColY)
-{
-    int i, j;
-    for (j=0; j<n; ++j) {
-        for (i=0; i<m; ++i) {
-            // omp atomic here? but how with min() and Y on both sides
-            while (Y[i*incRowY+j*incColY] > X[i*incRowX+j*incColX])
-                Y[i*incRowY+j*incColY] = X[i*incRowX+j*incColX];
-        }
-    }
-}
-
-//
-//  Compute X *= alpha
-//
-
-//
-//  Macro Kernel for the multiplication of blocks of A and B.  We assume that
-//  these blocks were previously packed to buffers _A and _B.
-//
-static void
-dgemm_macro_kernel(int     mc,
-                   int     nc,
-                   int     kc,
-                   double  *C,
-                   int     incRowC,
-                   int     incColC)
-{
-    int mp = (mc+MR-1) / MR;
-    int np = (nc+NR-1) / NR;
-
-    int _mr = mc % MR;
-    int _nr = nc % NR;
-
-    int mr, nr;
-    int i, j;
-
-    const double *nextA;
-    const double *nextB;
-
-#pragma omp parallel for default(shared) private(j, i, mr, nr, _C, nextA, nextB)
-    for (j=0; j<np; ++j) {
-        nr    = (j!=np-1 || _nr==0) ? NR : _nr;
-        nextB = &_B[j*kc*NR];
-
-        // diagonal blocks could probably run to smaller value
-        for (i=0; i<mp; ++i) {
-            mr    = (i!=mp-1 || _mr==0) ? MR : _mr;
-            nextA = &_A[(i+1)*kc*MR];
-
-            if (i==mp-1) {
-                nextA = _A;
-                nextB = &_B[(j+1)*kc*NR];
-                if (j==np-1) {
-                    nextB = _B;
-                }
-            }
-
-            if (mr==MR && nr==NR) {
-                dgemm_micro_kernel(kc, &_A[i*kc*MR], &_B[j*kc*NR],
-                                   false, //full block
-                                   &C[i*MR*incRowC+j*NR*incColC],
-                                   incRowC, incColC,
-                                   nextA, nextB);
-            } else { // partial block at the edge
-                dgemm_micro_kernel(kc, &_A[i*kc*MR], &_B[j*kc*NR],
-                                   true, // partial block
-                                   _C, 1, MR,
-                                   nextA, nextB);
-                dgeaxpy(mr, nr, _C, 1, MR,
-                        &C[i*MR*incRowC+j*NR*incColC], incRowC, incColC);
-            }
-        }
-    }
-}
-
-//
-//  Compute C <- beta*C + alpha*A*B
-//
-void
-dgemm_nn(int            n,
-         const double   *A,
-         double         *C)
-{
-    int m = n, k = n;
-    int mb = (m+MC-1) / MC;
-    int nb = (n+NC-1) / NC;
-    int kb = (k+KC-1) / KC;
-
-    int incRowA = 1, incRowB = 1, incRowC = 1;
-    int incColA = n, incColB = n, incColC = n;
-    const double *B = A;
-
-    int _mc = m % MC;
-    int _nc = n % NC;
-    int _kc = k % KC;
-
-    int mc, nc, kc;
-    int i, j, l;
-
-    for (j=0; j<nb; ++j) {
-        nc = (j!=nb-1 || _nc==0) ? NC : _nc;
-
-        for (l=0; l<kb; ++l) {
-            kc    = (l!=kb-1 || _kc==0) ? KC   : _kc;
-
-            pack_B(kc, nc,
-                   &B[l*KC*incRowB+j*NC*incColB], incRowB, incColB,
-                   _B);
-            // Could we parallelize this loop? With private A?
-            // k=m=n, MC=KC, so we could do i<=l to get one triangle?
-            for (i=0; i<mb; ++i) {
-                mc = (i!=mb-1 || _mc==0) ? MC : _mc;
-
-                pack_A(mc, kc,
-                       &A[i*MC*incRowA+l*KC*incColA], incRowA, incColA,
-                       _A);
-
-                dgemm_macro_kernel(mc, nc, kc, 
-                                   &C[i*MC*incRowC+j*NC*incColC],
-                                   incRowC, incColC);
-            }
-        }
-    }
-}
-

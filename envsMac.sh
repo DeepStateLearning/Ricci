@@ -3,3 +3,5 @@ export CXX="g++-5"
 export CC="gcc-5"
 export LIBRARY_PATH="/usr/local/lib:$LIBRARY_PATH"
 export CPATH=":/usr/local/include:$CPATH"
+export OMP_DYNAMIC=FALSE
+export OMP_PROC_BIND=TRUE

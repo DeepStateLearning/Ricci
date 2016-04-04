@@ -119,7 +119,7 @@ def coarseRicci4(L, sqdist, R, A, B):
     Fully optimized Ricci matrix computation.
 
     Requires 7 matrix multiplications and many entrywise operations.
-    We only use 3 temporary matrices.
+    We use 3 temporary matrices, but we should only 2.
 
     Uses full gemm functionality to avoid creating intermediate matrices.
 
@@ -128,6 +128,7 @@ def coarseRicci4(L, sqdist, R, A, B):
     R is the output array, while A and B are temporary matrices.
     """
     D = sqdist
+    # this C should not exist
     C = ne.evaluate("D*D/4.0")
     L.dot(L, out=A)
     A.dot(C, out=R)

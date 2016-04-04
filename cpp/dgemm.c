@@ -4,35 +4,49 @@
 // and + replaced with min(x,y)
 //
 // Other changes:
-// - added OpenMp in macro kernel
-// - micro kernel not fully optimized (pure c, no SSE, no asm)
+// - added OpenMp in the first loop outside of the macro kernel
+//      so that _A is in private L2 cache for each core.
+// - incorporates three kernels
+//      * pure C from ulmBLAS (used with ffast-math and when no SSE 
+//      * fully optimized asm SSE from ulmBLAS (when AVX not available)
+//      * asm avx kernel from BLIS (when avx is available)
+//   Unfortunately avx2 will not be of much help, 
+//   since fused madd cannot be used with min-add reduction
 // 
-// Based on pure-c dgemm from:
+// Based on dgemm from:
 //      https://github.com/michael-lehn/ulmBLAS
 // The above implements the BLIS framework:
 //      https://github.com/flame/blis
+//
 #define MC  96
 #define KC  256
 #define NC  4096
-
-#define MR  4
-#define NR  4
 
 // generalized inner product
 // new reduction operation
 #define min(x,y)  (((x)<(y)) ? (x) : (y))
 // zero element for the reduction
-#define MAX 1e300
+#define MAX 1e+300
 // new pointwise operation
 #define add(x,y)  ((x)+(y))
 // redefine these to get other generalized inner products
 
 //
 //  Local buffers for storing panels from A, B and C
+//  change depending on kernel
 //
-static double _A[MC*KC];
-static double _B[KC*NC];
-static double _C[MR*NR];
+#if defined __FAST_MATH__
+#include "cpp/kernel_ulmBLAS_pureC.c"
+#elif defined __AVX__
+#include "cpp/kernel_BLIS_avx.c"
+#elif defined __SSE__
+#include "cpp/kernel_ulmBLAS_sse.c"
+#else 
+#include "cpp/kernel_ulmBLAS_pureC.c"
+#endif
+
+#pragma omp threadprivate(_C)
+#pragma omp threadprivate(_A)
 
 //
 //  Packing complete panels from A (i.e. without padding)
@@ -133,62 +147,6 @@ pack_B(int kc, int nc, const double *B, int incRowB, int incColB,
 }
 
 //
-//  Micro kernel for multiplying panels from A and B.
-//
-static void
-dgemm_micro_kernel(int kc,
-                   const double *A, const double *B,
-                   bool partial,
-                   double *C, int incRowC, int incColC)
-{
-
-    int i, j, l;
-    double AB[MR*NR];
-
-//
-//  Compute AB = A*B
-//
-    for (j=0; j<NR*MR; ++j) {
-            AB[j] = MAX;
-    }
-    for (l=0; l<kc; ++l) {
-        for (j=0; j<NR; ++j) {
-            for (i=0; i<MR; ++i) {
-                AB[i+j*MR] = min(add(A[i], B[j]), AB[i+j*MR]);
-            }
-        }
-        A += MR;
-        B += NR;
-    }
-
-//
-//  Update C <- beta*C
-//
-    if (partial) {
-        for (j=0; j<NR; ++j) {
-            for (i=0; i<MR; ++i) {
-                // this works on private _C array
-                C[i*incRowC+j*incColC] = MAX;
-            }
-        }
-    } 
-
-//
-//  Update C <- C + alpha*AB (note: the case alpha==0.0 was already treated in
-//                                  the above layer dgemm_nn)
-//
-    for (j=0; j<NR; ++j) {
-        for (i=0; i<MR; ++i) {
-            // omp atomic here? but how with min() and C on both sides
-            // C[i*incRowC+j*incColC] = min(AB[i+j*MR], C[i*incRowC+j*incColC]);
-            // an attempt to avoid conflicts
-            while (C[i*incRowC+j*incColC] > AB[i+j*MR])
-                C[i*incRowC+j*incColC] = AB[i+j*MR];
-        }
-    }
-}
-
-//
 //  Compute Y += alpha*X
 //
 static void
@@ -236,23 +194,38 @@ dgemm_macro_kernel(int     mc,
     int mr, nr;
     int i, j;
 
-#pragma omp parallel for default(shared) private(j, i, mr, nr, _C)
+    const double *nextA;
+    const double *nextB;
+
+//#pragma omp parallel for default(shared) private(j, i, mr, nr, nextA, nextB) num_threads(8)
     for (j=0; j<np; ++j) {
         nr    = (j!=np-1 || _nr==0) ? NR : _nr;
+        nextB = &_B[j*kc*NR];
 
         // diagonal blocks could probably run to smaller value
         for (i=0; i<mp; ++i) {
             mr    = (i!=mp-1 || _mr==0) ? MR : _mr;
+            nextA = &_A[(i+1)*kc*MR];
+
+            if (i==mp-1) {
+                nextA = _A;
+                nextB = &_B[(j+1)*kc*NR];
+                if (j==np-1) {
+                    nextB = _B;
+                }
+            }
 
             if (mr==MR && nr==NR) {
                 dgemm_micro_kernel(kc, &_A[i*kc*MR], &_B[j*kc*NR],
                                    false, //full block
                                    &C[i*MR*incRowC+j*NR*incColC],
-                                   incRowC, incColC);
+                                   incRowC, incColC,
+                                   nextA, nextB);
             } else { // partial block at the edge
                 dgemm_micro_kernel(kc, &_A[i*kc*MR], &_B[j*kc*NR],
                                    true, // partial block
-                                   _C, 1, MR);
+                                   _C, 1, MR,
+                                   nextA, nextB);
                 dgeaxpy(mr, nr, _C, 1, MR,
                         &C[i*MR*incRowC+j*NR*incColC], incRowC, incColC);
             }
@@ -268,7 +241,7 @@ dgemm_nn(int            n,
          const double   *A,
          double         *C)
 {
-    int k = n, m = n;
+    int m = n, k = n;
     int mb = (m+MC-1) / MC;
     int nb = (n+NC-1) / NC;
     int kb = (k+KC-1) / KC;
@@ -284,6 +257,13 @@ dgemm_nn(int            n,
     int mc, nc, kc;
     int i, j, l;
 
+    // gemm should not be using hyperthreading
+#ifdef NUMCORE
+    int numcore = NUMCORE;
+#else
+    int numcore = omp_get_max_threads();
+#endif
+
     for (j=0; j<nb; ++j) {
         nc = (j!=nb-1 || _nc==0) ? NC : _nc;
 
@@ -293,13 +273,16 @@ dgemm_nn(int            n,
             pack_B(kc, nc,
                    &B[l*KC*incRowB+j*NC*incColB], incRowB, incColB,
                    _B);
+            // Could we parallelize this loop? With private A?
+            // k=m=n, MC=KC, so we could do i<=l to get one triangle?
+#pragma omp parallel for default(shared) private(i, mc) num_threads(numcore)
             for (i=0; i<mb; ++i) {
                 mc = (i!=mb-1 || _mc==0) ? MC : _mc;
 
                 pack_A(mc, kc,
                        &A[i*MC*incRowA+l*KC*incColA], incRowA, incColA,
                        _A);
-                
+
                 dgemm_macro_kernel(mc, nc, kc, 
                                    &C[i*MC*incRowC+j*NC*incColC],
                                    incRowC, incColC);

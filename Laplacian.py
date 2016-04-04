@@ -6,14 +6,11 @@ import scipy.misc as sm
 
 
 def computeLaplaceMatrix2(sqdist, t, L):
-    """
-    Compute heat approximation to Laplacian matrix using logarithms.
-
-    This is faster, but not as accurate.
-    """
-    lt = np.log(2 / t)
+    """ Compute heat approximation to Laplacian matrix using logarithms. """
+    # FIXME Is the scaling ok in here?
+    lt = np.log(2.0 / t)
     ne.evaluate('sqdist / (-2.0 * t)', out=L)
-    # numpy floating point errors likely below
+    # FIXME subtract the largest element to simulate logsumexp
     logdensity = sm.logsumexp(L, axis=1)[:, None]
     # sum in rows must be 1, except for 2/t factor
     ne.evaluate('exp(L - logdensity + lt)', out=L)
@@ -21,6 +18,7 @@ def computeLaplaceMatrix2(sqdist, t, L):
     L[np.diag_indices(len(L))] -= 2.0 / t
 
 try:
+    # reimplement gmpy2 in C++ to avoid slow loops
     # gmpy2 setup for numpy object arrays
     import gmpy2 as mp
     mp.get_context().precision = 200
