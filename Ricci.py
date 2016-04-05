@@ -67,9 +67,8 @@ def CDC1(L, f, g):
     return cdc / 2
 
 
-def coarseRicciold(L, sqdist):
+def coarseRicciold(L, sqdist, Ric):
     """ Slow but surely correct Ricci computation. """
-    Ric = np.zeros((len(sqdist), len(sqdist)))
     for i in range(len(L)):
         for j in range(len(L)):
             # pay close attention to this if it becomes asymmetric
@@ -78,16 +77,13 @@ def coarseRicciold(L, sqdist):
             cdc2 = L.dot(cdc1) - 2 * CDC1(L, f_ij, L.dot(f_ij))
             Ric[i, j] = cdc2[i] / 2
 
-    return Ric
 
-
-def coarseRicci3(L, sqdist):
+def coarseRicci3(L, sqdist, Ric):
     """
     Precompute Ld first and try to avoid mat-mat multiplications.
 
     This one is about 3x faster, but requires a bit more memory.
     """
-    Ric = np.zeros_like(sqdist)
     Ld = L.dot(sqdist)
     for i in xrange(len(L)):
         # now f_i and cdc are matrices
@@ -111,15 +107,14 @@ def coarseRicci3(L, sqdist):
                         'f_ii': f_i[i]
                     }, out=cdc)
         Ric[i, :] = cdc
-    return Ric
 
 
-def coarseRicci4(L, sqdist, R, A, B):
+def coarseRicci4(L, sqdist, R, temp1=None, temp2=None):
     """
     Fully optimized Ricci matrix computation.
 
     Requires 7 matrix multiplications and many entrywise operations.
-    We only use 3 temporary matrices.
+    We use 3 temporary matrices, but we should only 2.
 
     Uses full gemm functionality to avoid creating intermediate matrices.
 
@@ -128,33 +123,48 @@ def coarseRicci4(L, sqdist, R, A, B):
     R is the output array, while A and B are temporary matrices.
     """
     D = sqdist
-    C = ne.evaluate("D*D/4.0")
-    L.dot(L, out=A)
-    A.dot(C, out=R)
+    if temp1 is None:
+        temp1 = np.zeros_like(sqdist)
+    if temp2 is None:
+        temp2 = np.zeros_like(sqdist)
+    A = temp1
+    B = temp2
+    # this C should not exist
+    B = ne.evaluate("D*D/4.0")
+    L.dot(B, out=A)
     L.dot(D, out=B)
-    ne.evaluate("-D*B", out=C)
-    add_AB_to_C(L, C, R)
-    L.dot(B, out=C)
-    ne.evaluate("R+0.5*(D*C+B*B)", out=R)
+    ne.evaluate("A-D*B", out=A)
+    L.dot(A, out=R)
+    # the first two terms done
+    L.dot(B, out=A)
+    ne.evaluate("R+0.5*(D*A+B*B)", out=R)
     # Now R contains everything under overline
-    ne.evaluate("R+dR-0.5*dC*D-dB*B",
-                global_dict={'dC': np.diag(C).copy()[:, None],
+    ne.evaluate("R+dR-0.5*dA*D-dB*B",
+                global_dict={'dA': np.diag(A).copy()[:, None],
                              'dB': np.diag(B).copy()[:, None],
                              'dR': np.diag(R).copy()[:, None]}, out=R)
-    # Now R contains all but two matrix product from line 2
-    ne.evaluate("L*BT-0.5*A*D", global_dict={'BT': B.T}, out=C)
-    add_AB_to_C(C, D, R)
-    ne.evaluate("L*D", out=C)
-    add_AB_to_C(C, B, R)
+    # Now R contains all but two matrix products from line 2
+    L.dot(L, out=A)
+    ne.evaluate("L*BT-0.5*A*D", global_dict={'BT': B.T}, out=A)
+    add_AB_to_C(A, D, R)
+    ne.evaluate("L*D", out=A)
+    add_AB_to_C(A, B, R)
     # done!
     np.fill_diagonal(R, 0.0)
 
 
 def getScalar(Ricci, sqdist, t):
-    kernel = ne.evaluate("exp(-sqdist/t)")
-    Scalar = np.diag(Ricci.dot(kernel))
-    density = kernel.sum(axis=1)
-    Scalar = ne.evaluate("Scalar/density")
+    """
+    Compute scalar curvature.
+
+    Without creating any matrices.
+    """
+    density = ne.evaluate("sum(exp(-sqdist/t), axis=1)")
+    # Scalar = np.diag(Ricci.dot(kernel))
+    # same as
+    Scalar = ne.evaluate("sum(Ricci*exp(-sqdist/t), axis=1)")
+    # density = kernel.sum(axis=1)
+    ne.evaluate("Scalar/density", out=Scalar)
     return Scalar
 
 # currently best method
@@ -179,8 +189,13 @@ class RicciTests (unittest.TestCase):
             default = coarseRicciold
         print
         for d in data.tests(size):
-            L = Laplacian(d, 0.1)
-            error = np.amax(np.abs(f(L, d)-default(L, d)))
+            L = np.random.rand(*d.shape)
+            R = np.random.rand(*d.shape)
+            R2 = R.copy()
+            Laplacian(d, 0.1, L)
+            f(L, d, R)
+            default(L, d, R2)
+            error = np.amax(np.abs(R-R2))
             print "Absolute error: ", error
             self.assertLess(error, threshold)
 
@@ -192,9 +207,13 @@ class RicciTests (unittest.TestCase):
         for p in points:
             d = data.closefarsimplices(p, 0.1, 5)[0]
             print "\nPoints: {}".format(2*p)
-            test_speed(Laplacian, d, 0.1)
-            L = Laplacian(d, 0.1)
-            test_speed(f, L, d)
+            L = np.zeros_like(d)
+            R = np.zeros_like(d)
+            print "Laplacian: ",
+            test_speed(Laplacian, d, 0.1, L)
+            Laplacian(d, 0.1, L)
+            print "Ricci: ",
+            test_speed(f, L, d, R)
 
     def test_Ricci3(self):
         """ Ricci3 compared to old mathematical Ricci. """

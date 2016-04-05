@@ -1,6 +1,5 @@
 """ Coarse Ricci flow for a point cloud. """
 import numpy as np
-import numexpr as ne
 
 
 # treat some numpy warnings as errors?
@@ -10,10 +9,10 @@ np.seterr(all="print")  # divide='raise', invalid='raise')
 #   simulation parameters
 #
 runs = 2000  # how many iterations
-show = 20  # how frequently we show the result
+show = 5  # how frequently we show the result
 eta = 0.0075  # factor of Ricci that is added to distance squared
-threshold = 0.001  # clustering threshold
-upperthreshold = 0.3  # won't try to cluster if distances in ambiguity interva (threshold, upperthreshold)
+threshold = 0.0001  # clustering threshold
+# upperthreshold = 0.3  # won't try to cluster if distances in ambiguity interva (threshold, upperthreshold)
 # 'min' rescales the distance squared function so minimum is 1.
 # 'L1' rescales it so the sum of distance squared stays the same
 #   (perhaps this is a misgnomer and it should be 'L2' but whatever)
@@ -32,13 +31,13 @@ from Laplacian import Laplacian
 from Ricci import coarseRicci, applyRicci, getScalar
 from data import noisycircles, noisymoons, two_clusters, perm_moons_200, perm_circles_200, four_clusters_3d
 import matplotlib.pyplot as plt
-import networkx
 
 
 # import data
 # sqdist, pointset = data.two_clusters(35, 25, 2, dim=2)
 
 n_samples = 20
+
 
 def graph(threshold):
     """ Draw pointset as colored connected components. """
@@ -70,8 +69,7 @@ def graph(threshold):
     return num
 
 
-
-# sqdist, pointset = noisymoons(300, noise)
+# sqdist, pointset = noisymoons(500, noise)
 
 sqdist, pointset = two_clusters(500, 250, 7)
 # sqdist, pointset = perm_circles_200()
@@ -84,7 +82,6 @@ if dim == 2:
 else:
     from mpl_toolkits.mplot3d import Axes3D
     ax = fig.add_subplot(111, projection='3d')
-graph(threshold)
 
 #
 #       !!! Memory management !!!
@@ -109,7 +106,10 @@ mat1 = np.zeros_like(sqdist)
 mat2 = np.zeros_like(sqdist)
 
 
-sanitize(sqdist, mat1, rescale, CLIP, 1.0)
+sanitize(sqdist, rescale, np.inf, 1.0, temp=mat1)
+
+graph(threshold)
+
 Laplacian(sqdist, t, L)
 coarseRicci(L, sqdist, Ricci, mat1, mat2)
 
@@ -119,14 +119,16 @@ coarseRicci(L, sqdist, Ricci, mat1, mat2)
 # print Ricci
 
 applyRicci(sqdist, eta, T, Ricci, mode='sym')
-sanitize(sqdist, mat1, rescale, CLIP, 1.0)
+sanitize(sqdist, rescale, CLIP, 1.0, temp=mat1)
+
+graph(threshold)
 
 clustered = False
 
 # L is the same as sqdist
 for i in range(runs + show + 3):
     Laplacian(sqdist, t, L)
-    coarseRicci(L, sqdist, Ricci, mat1, mat2)
+    coarseRicci(L, sqdist, Ricci, temp1=mat1, temp2=mat2)
     # now Laplacian is useless, so oldsqdist can replace it
     np.copyto(oldsqdist, sqdist)
     applyRicci(sqdist, eta, T, Ricci, mode='sym')
@@ -136,12 +138,12 @@ for i in range(runs + show + 3):
     # print t
     # ne.evaluate("dist/s", out=dist)
 
-    sanitize(sqdist, mat1, rescale, CLIP,  1.0)
+    sanitize(sqdist, rescale, CLIP,  1.0, temp=mat1)
 
     if i % show == 2:
-        #print Ricci
+        # print Ricci
         # print "sqdist for ", i, "  time"
-        #print sqdist
+        # print sqdist
         # print 't = ', t
         # print Ricci
         # print Ricci/dist, '<- Ricc/dist'
@@ -150,8 +152,8 @@ for i in range(runs + show + 3):
         # print np.std(scalar), scalar.mean(), np.std(scalar)/scalar.mean()
         # print scalar
         # print '##########'
-        numclusters = graph(0.001)
-        if numclusters == 2:
+        numclusters = graph(threshold)
+        if numclusters == 2 and is_clustered(sqdist, threshold):
             break
         # if i>show and is_stuck(sqdist, oldsqdist, eta):  #it was getting falsely stuck very in some situations
         #     print 'stuck!'
@@ -166,7 +168,7 @@ for i in range(runs + show + 3):
         #     clust = color_clusters(sqdist, threshold)
         #     break
 
-exit(0)
+# exit(0)
 
 if not clustered:
     if is_clustered(sqdist, threshold):

@@ -6,21 +6,20 @@ import scipy.misc as sm
 
 
 def computeLaplaceMatrix2(sqdist, t, L):
-    """
-    Compute heat approximation to Laplacian matrix using logarithms.
-
-    This is faster, but not as accurate.
-    """
-    lt = np.log(2 / t)
+    """ Compute heat approximation to Laplacian matrix using logarithms. """
+    # FIXME Is the scaling ok in here?
+    lt = np.log(2.0 / t)
     ne.evaluate('sqdist / (-2.0 * t)', out=L)
-    # numpy floating point errors likely below
+    # FIXME subtract the largest element to simulate logsumexp
     logdensity = sm.logsumexp(L, axis=1)[:, None]
     # sum in rows must be 1, except for 2/t factor
     ne.evaluate('exp(L - logdensity + lt)', out=L)
     # fix diagonal to account for -f(x)?
     L[np.diag_indices(len(L))] -= 2.0 / t
 
+
 try:
+    # FIXME reimplement gmpy2 in C++ to avoid slow loops
     # gmpy2 setup for numpy object arrays
     import gmpy2 as mp
     mp.get_context().precision = 200
@@ -37,7 +36,7 @@ try:
         m = np.max(a, axis=1)
         return _log(np.sum(_exp(a - m[:, None]), axis=1)) + m
 
-    def computeLaplaceMatrix(sqdist, t, logeps=mp.mpfr("-20")):
+    def computeLaplaceMatrix(sqdist, t, Lap, logeps=mp.mpfr("-20")):
         """
         Compute heat approximation to Laplacian using logarithms and gmpy2.
 
@@ -55,12 +54,11 @@ try:
         logdensity = _logsumexp(L)
         L = _exp(L - logdensity[:, None] + lt)
         L[np.diag_indices(len(L))] -= 2 / t2
-        L = np.array(_to_double(L), dtype=float)
+        Lap[:] = np.array(_to_double(L), dtype=float)
         # if just one nonzero element, then erase row and column
-        degenerate = np.sum(L != 0.0, axis=1) <= 1
-        L[:, degenerate] = 0
-        L[degenerate, :] = 0
-        return L
+        degenerate = np.sum(Lap != 0.0, axis=1) <= 1
+        Lap[:, degenerate] = 0
+        Lap[degenerate, :] = 0
 except:
     print "Warning: gmpy2 is not available. "
     WITH_GMPY2 = False
@@ -91,8 +89,10 @@ class LaplaceTests (unittest.TestCase):
         print
         for d in data.tests('small'):
             # compare without cutoff
-            L1 = computeLaplaceMatrix(d, 0.1, logeps=mp.inf(-1))
-            L2 = computeLaplaceMatrix2(d, 0.1)
+            L1 = np.random.rand(*d.shape)
+            computeLaplaceMatrix(d, 0.1, L1, logeps=mp.inf(-1))
+            L2 = np.random.rand(*d.shape)
+            computeLaplaceMatrix2(d, 0.1, L2)
             error = np.max(np.abs(L1-L2))
             print "Absolute error: ", error
             self.assertLess(error, threshold)
@@ -103,7 +103,9 @@ class LaplaceTests (unittest.TestCase):
         threshold = 1E-10
         print
         for d in data.tests('small'):
-            error = np.max(np.abs(np.sum(f(d, 0.1), axis=1)))
+            L = np.random.rand(*d.shape)
+            f(d, 0.1, L)
+            error = np.max(np.abs(np.sum(L, axis=1)))
             print "Absolute error: ", error
             self.assertLess(error, threshold)
 
@@ -122,10 +124,12 @@ class LaplaceTests (unittest.TestCase):
         from tools import test_speed
         d = data.closefarsimplices(200, 0.1, 5)[0]
         print "\nPoints: 200"
-        test_speed(f, d, 0.1)
+        L = np.random.rand(*d.shape)
+        test_speed(f, d, 0.1, L)
         d = data.closefarsimplices(400, 0.1, 5)[0]
+        L = np.random.rand(*d.shape)
         print "Points: 400"
-        test_speed(f, d, 0.1)
+        test_speed(f, d, 0.1, L)
 
     def test_speed_numpy(self):
         """ Speed with numpy. """

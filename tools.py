@@ -33,7 +33,6 @@ def metricize3(dist):
             np.minimum(dist[i, :], new[i, :], out=new[i, :])
             error += np.sum(dist[i, :] - new[i, :])
             dist[i, :] = new[i, :]
-        print error
     ne.evaluate('dist**2', out=dist)
 
 
@@ -127,6 +126,9 @@ def build_fastmath_extension():
     """
     from scipy.weave import ext_tools
     mod = ext_tools.ext_module('ctools_fastmath')
+    # number of physical cpus
+    import mkl
+    ncpus = mkl.get_max_threads()
     # type declarations
     d = np.zeros((2, 2))
     d2 = np.zeros((2, 2))
@@ -139,10 +141,11 @@ def build_fastmath_extension():
     func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2'])
     func.customize.add_support_code(support_code)
     mod.add_function(func)
-    # mod.customize.add_header('<omp.h>')
+    mod.customize.add_header('<omp.h>')
     mod.customize.add_header('<cmath>')
     mod.customize.add_header('<x86intrin.h>')
-    mod.compile(extra_compile_args=["-O3 -fopenmp", "-march=native",
+    mod.compile(extra_compile_args=["-O3 -DNUMCORE={}".format(ncpus),
+                                    "-fopenmp -march=native",
                                     "-fomit-frame-pointer", "-ffast-math",
                                     "-mfpmath=sse"],
                 verbose=2, libraries=['gomp'],
@@ -161,6 +164,10 @@ def build_extension():
     """
     from scipy.weave import ext_tools
     mod = ext_tools.ext_module('ctools')
+    # number of physical cpus
+    import mkl
+    ncpus = mkl.get_max_threads()
+    print "Number of physical cores: ", ncpus
     # type declarations
     d = np.zeros((2, 2))
     d2 = np.zeros((2, 2))
@@ -200,18 +207,19 @@ def build_extension():
 
     # metricize via BLIS framework
     # FIXME add avx kernel
-    with open('cpp/dgemm_asm_sse.c', 'r') as f:
+    with open('cpp/dgemm.c', 'r') as f:
         support_code = f.read()
     with open('cpp/metricize_dgemm.c', 'r') as f:
         code = f.read()
     func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2'])
     func.customize.add_support_code(support_code)
     mod.add_function(func)
-    # mod.customize.add_header('<omp.h>')
+    mod.customize.add_header('<omp.h>')
     mod.customize.add_header('<vector>')
     mod.customize.add_header('<cmath>')
     mod.customize.add_header('<x86intrin.h>')
-    mod.compile(extra_compile_args=["-O3 -fopenmp", "-march=native",
+    mod.compile(extra_compile_args=["-O3 -DNUMCORE={}".format(ncpus),
+                                    "-fopenmp -march=native",
                                     "-fomit-frame-pointer",
                                     "-mfpmath=sse"],
                 verbose=2, libraries=['gomp'],
@@ -243,20 +251,24 @@ try:
         """
         ctools.metricize_random(dist)
 
-    def metricize5(dist, temp):
+    def metricize5(dist, temp=None):
         """
         Metricize based on BLIS framework for BLAS.
 
         Modified ulmBLAS code for dgemm_nn.
         """
+        if temp is None:
+            temp = np.zeros_like(dist)
         ctools.metricize_gemm(dist, temp)
 
-    def metricize5b(dist, temp):
+    def metricize5b(dist, temp=None):
         """
         Metricize based on BLIS framework for BLAS.
 
         Modified ulmBLAS code for dgemm_nn.
         """
+        if temp is None:
+            temp = np.zeros_like(dist)
         ctools_fastmath.metricize_gemm(dist, temp)
 
     def components(dist, threshold, colors):
@@ -268,13 +280,13 @@ try:
         """
         return ctools.components(dist, threshold, colors)
 
-    metricize = metricize5b
+    metricize = metricize5
 except:
     print "   !!! Error: C++ extension failed to build !!!   "
     metricize4 = metricize
 
 
-def sanitize(sqdist, temp, how='L_inf', clip=np.inf, norm=1.0):
+def sanitize(sqdist, how='L_inf', clip=np.inf, norm=1.0, temp=None):
     """
     Clean up the distance matrix.
 
@@ -391,11 +403,7 @@ class ToolsTests (unittest.TestCase):
             d2 = d.copy()
             d3 = d.copy()
             metricize3(d)
-            try:
-                f(d2)
-            except:
-                temp = d.copy()
-                f(d2, temp)
+            f(d2)
             print "Changed entries: {} out of {}." \
                 .format(n*n - np.isclose(d, d3).sum(), n*n)
             error = np.max(np.abs(d-d2))
@@ -427,11 +435,7 @@ class ToolsTests (unittest.TestCase):
             d = np.random.rand(n, n)
             d = d + d.T
             np.fill_diagonal(d, 0)
-            if f in (metricize5, metricize5b):
-                temp = d.copy()
-                test_speed(f, d, temp, repeat=1)
-            else:
-                test_speed(f, d, repeat=1)
+            test_speed(f, d, repeat=1)
 
     def test_speed_metricize2(self):
         """ Speed of the parallelized metricize. """
@@ -488,3 +492,11 @@ if __name__ == "__main__":
     # FIXME add missing tests for components
     suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
     unittest.TextTestRunner(verbosity=2).run(suite)
+    # ToolsTests.runTest = lambda self: True
+    # t = ToolsTests()
+    # t.test_metricize4()
+    # t.test_metricize5()
+    # t.test_metricize5b()
+    # t.test_speed_metricize4()
+    # t.test_speed_metricize5()
+    # t.test_speed_metricize5b()

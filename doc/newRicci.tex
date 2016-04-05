@@ -132,19 +132,37 @@ With this notation we can represent a row of Ricci matrix (given by \eqref{Ricci
 \section{Full Ricci matrix}
 Note that the formula for the row of the Ricci matrix contains only take a row operations for various matrices. We can also combine all overline operations. Hence
 
-\begin{align*}
-    R &= \overline{\frac{1}{4}AD^{\times2} -L(D\times B) +\frac{1}{2}D\times C + \frac{1}{2}B^{\times2}}
+\begin{align}
+    R &= \overline{\frac{1}{4}AD^{\times2} -L(D\times B) +\frac{1}{2}D\times C + \frac{1}{2}B^{\times2}}\nonumber
     \\&
-    +\left((L\times B^T)-  \frac{1}{2}(A\times D)\right)D +(L\times D) B
+    +\left((L\times B^T)-  \frac{1}{2}(A\times D)\right)D +(L\times D) B\label{2ndline}
      \\&
-     - \frac{1}{2}D\times diag(C) - B\times diag(B),
-\end{align*}
+     - \frac{1}{2}D\times diag(C) - B\times diag(B),\nonumber
+\end{align}
 with $A=L^2$, $B=LD$ and $C=AD$, a $diag$ denoting a column vector composed of the diagonal of a matrix.
 
 \section{Order of computations}
 \label{sec:OrderOfComputations}
 
-We want to minimize the number of multiplications while keeping memory requirement small. It seems that 7 matrix multiplications and 3 extra matrices are enough. Although it should be possible to bring this down to 2 extra matrices.
+We want to minimize the number of multiplications while keeping memory requirement small. Clearly, 7 matrix multiplications and 3 extra matrices are enough. Although it should be possible to bring this down to 2 extra matrices. Furthermore, Laplacian could be just computed as needed, since it is really fast.
+
+\subsection{Only 2 temporary matrices}
+\label{sec:Only2Temporary}
+
+We will avoid computing $A$ by taking $L$ out of the first two terms.
+\begin{itemize}
+    \item Compute $B\leftarrow D^{\times2}/4$ first, then $A\leftarrow LB$ (1st M-M multiply).
+    \item Compute $B\leftarrow LD$ (2nd M-M multiply), then $A\leftarrow A-D\times B$.
+    \item Now $R\leftarrow LA$ (3rd M-M multiply).
+    \item Compute $A\leftarrow LB$ (4th M-M multiply, called C in the section above), then finish adding $diag$ terms and overline.
+\end{itemize}
+Now we need the second line terms from \eqref{2ndline}. We already have $B$ computed.
+\begin{itemize}
+    \item Find $A\leftarrow LL$ (5th M-M multiply), then $A\leftarrow \Big((L\times B^T)-  \frac{1}{2}(A\times D)\Big)$.
+            \item Now $R \leftarrow R+AD$ (6th M-M multiply, full dgemm).
+                \item Finally, $A\leftarrow D\times L$, then $R\leftarrow R+AB$ (7th M-M multiply, full dgemm).
+\end{itemize}
+
 
 
 
