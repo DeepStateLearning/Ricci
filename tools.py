@@ -6,14 +6,6 @@ import numexpr as ne
 from numba import jit
 import threading
 
-# check SIMD extensions:
-# gcc -march=native -dM -E - < /dev/null | egrep "SSE|AVX" | sort
-# number of physical cpus (for number of threads in mat-mat mult)
-# Mac: sysctl hw.physicalcpu | cut -d\  -f2
-# Linux: lscpu | grep "Core(s)" | grep -o "[0-9]*$"
-# Anaconda: import mkl; mkl.get_max_threads()
-# use that to compile appropriate kernel
-
 
 def test_speed(f, *args, **kwargs):
     """ Test the speed of a function. """
@@ -259,20 +251,24 @@ try:
         """
         ctools.metricize_random(dist)
 
-    def metricize5(dist, temp):
+    def metricize5(dist, temp=None):
         """
         Metricize based on BLIS framework for BLAS.
 
         Modified ulmBLAS code for dgemm_nn.
         """
+        if temp is None:
+            temp = np.zeros_like(dist)
         ctools.metricize_gemm(dist, temp)
 
-    def metricize5b(dist, temp):
+    def metricize5b(dist, temp=None):
         """
         Metricize based on BLIS framework for BLAS.
 
         Modified ulmBLAS code for dgemm_nn.
         """
+        if temp is None:
+            temp = np.zeros_like(dist)
         ctools_fastmath.metricize_gemm(dist, temp)
 
     def components(dist, threshold, colors):
@@ -284,13 +280,13 @@ try:
         """
         return ctools.components(dist, threshold, colors)
 
-    metricize = metricize5b
+    metricize = metricize5
 except:
     print "   !!! Error: C++ extension failed to build !!!   "
     metricize4 = metricize
 
 
-def sanitize(sqdist, temp, how='L_inf', clip=np.inf, norm=1.0):
+def sanitize(sqdist, how='L_inf', clip=np.inf, norm=1.0, temp=None):
     """
     Clean up the distance matrix.
 
@@ -407,11 +403,7 @@ class ToolsTests (unittest.TestCase):
             d2 = d.copy()
             d3 = d.copy()
             metricize3(d)
-            try:
-                f(d2)
-            except:
-                temp = d.copy()
-                f(d2, temp)
+            f(d2)
             print "Changed entries: {} out of {}." \
                 .format(n*n - np.isclose(d, d3).sum(), n*n)
             error = np.max(np.abs(d-d2))
@@ -443,11 +435,7 @@ class ToolsTests (unittest.TestCase):
             d = np.random.rand(n, n)
             d = d + d.T
             np.fill_diagonal(d, 0)
-            if f in (metricize5, metricize5b):
-                temp = d.copy()
-                test_speed(f, d, temp, repeat=1)
-            else:
-                test_speed(f, d, repeat=1)
+            test_speed(f, d, repeat=1)
 
     def test_speed_metricize2(self):
         """ Speed of the parallelized metricize. """
