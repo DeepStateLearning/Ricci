@@ -1,5 +1,6 @@
 int n = Nd[0];
 int i;
+int count=1;
 double error;
 
 // sqdist to dist
@@ -25,6 +26,7 @@ while (error > 10e-12)
         d[i] = d2[i];
     }
     
+    if ((limit > 0) && (++count > limit)) break;
     // printf("%f ", error);
 }
 // printf("\n");
