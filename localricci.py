@@ -18,7 +18,7 @@ threshold = 0.0001  # clustering threshold
 #   (perhaps this is a misgnomer and it should be 'L2' but whatever)
 # 'L_inf' rescales each to have diameter 1"
 rescale = 'L_inf'
-t = 0.2 # should not be integer to avaoid division problems.  This scale is used for computing the Laplace operator
+t = 0.3 # should not be integer to avaoid division problems.  This scale is used for computing the Laplace operator
 T = 0.1 # scale used for localization of ricci flow
 noise = 0.06  # noise coefficient
 CLIP = 60  # value at which we clip distance function
@@ -39,19 +39,40 @@ import matplotlib.pyplot as plt
 n_samples = 20
 
 
-def graph(threshold):
-    """ Draw pointset as colored connected components. """
+def graph(threshold, mode="sort"):
+    """
+    Draw pointset as colored connected components.
+
+    By default each component has a different color based on cluster number.
+
+    They can also be colored using distance to one of the points of one of them.
+    However, this does not work well for more than two clusters, since distances
+    between clusters are about 1. (mode="dist")
+
+    Components can also be sorted according to the distance to a point from one
+    of them, to make less random looking coloring. (mode="sort")
+
+    Distances are measured between representatives of the component, so close
+    components may end up having large distance.
+    """
     global ax
     c = np.zeros(len(pointset), dtype=int)
     num = components(sqdist, 0.001, c)
     print "Number of components: ", num
-    # now c contains uniquely numbered clusters
+    # now c contains uniquely numbered components
 
     # replace colors with distance to a point
     # component number and a representative
     values, points = np.unique(c, return_index=True)
-    dists = sqdist[points[0], points-points[0]]
-    c = dists[c]
+    dists = sqdist[points[0], points]
+    if mode == "dist":
+        c = dists[c]
+    elif mode == "sort":
+        a = sorted(zip(values, dists), key=lambda e:e[1])
+        a = np.array(a)[:, 0]
+        c = a[c]
+
+
     if len(points) < 10:
         print "Distances between components: \n", sqdist[np.ix_(points, points)]
     else:
@@ -152,8 +173,8 @@ for i in range(runs + show + 3):
         # print np.std(scalar), scalar.mean(), np.std(scalar)/scalar.mean()
         # print scalar
         # print '##########'
-        numclusters = graph(threshold)
-        if numclusters == 2 and is_clustered(sqdist, threshold):
+        numclusters = graph(threshold, mode="sort")
+        if is_clustered(sqdist, 10*threshold):
             break
         # if i>show and is_stuck(sqdist, oldsqdist, eta):  #it was getting falsely stuck very in some situations
         #     print 'stuck!'
@@ -171,8 +192,8 @@ for i in range(runs + show + 3):
 # exit(0)
 
 if not clustered:
-    if is_clustered(sqdist, threshold):
-        clust = color_clusters(sqdist, threshold)
+    if is_clustered(sqdist, 10*threshold):
+        clust = color_clusters(sqdist, 10*threshold)
     else:
         print 'not clustered at all'
         quit()
