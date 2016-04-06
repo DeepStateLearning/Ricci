@@ -132,13 +132,14 @@ def build_fastmath_extension():
     # type declarations
     d = np.zeros((2, 2))
     d2 = np.zeros((2, 2))
+    limit = 4
 
     # metricize via BLIS framework
     with open('cpp/dgemm.c', 'r') as f:
         support_code = f.read()
     with open('cpp/metricize_dgemm.c', 'r') as f:
         code = f.read()
-    func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2'])
+    func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2', 'limit'])
     func.customize.add_support_code(support_code)
     mod.add_function(func)
     mod.customize.add_header('<omp.h>')
@@ -172,6 +173,7 @@ def build_extension():
     d = np.zeros((2, 2))
     d2 = np.zeros((2, 2))
     threshold = 0.5
+    limit = 4
     colors = np.zeros(2, dtype=int)
 
     # metricize using fully parallelized triangular loop
@@ -211,7 +213,7 @@ def build_extension():
         support_code = f.read()
     with open('cpp/metricize_dgemm.c', 'r') as f:
         code = f.read()
-    func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2'])
+    func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2', 'limit'])
     func.customize.add_support_code(support_code)
     mod.add_function(func)
     mod.customize.add_header('<omp.h>')
@@ -251,7 +253,19 @@ try:
         """
         ctools.metricize_random(dist)
 
-    def metricize5(dist, temp=None):
+    def metricize5(dist, temp=None, limit=0):
+        """
+        Metricize based on BLIS framework for BLAS.
+
+        Modified ulmBLAS code for dgemm_nn with optimal kernel.
+
+        If limit is larger than 0, then only this many rounds will hapen.
+        """
+        if temp is None:
+            temp = np.zeros_like(dist)
+        ctools.metricize_gemm(dist, temp, limit)
+
+    def metricize5b(dist, temp=None, limit=0):
         """
         Metricize based on BLIS framework for BLAS.
 
@@ -259,17 +273,7 @@ try:
         """
         if temp is None:
             temp = np.zeros_like(dist)
-        ctools.metricize_gemm(dist, temp)
-
-    def metricize5b(dist, temp=None):
-        """
-        Metricize based on BLIS framework for BLAS.
-
-        Modified ulmBLAS code for dgemm_nn.
-        """
-        if temp is None:
-            temp = np.zeros_like(dist)
-        ctools_fastmath.metricize_gemm(dist, temp)
+        ctools_fastmath.metricize_gemm(dist, temp, limit)
 
     def components(dist, threshold, colors):
         """
