@@ -2,7 +2,6 @@
 
 import numexpr as ne
 import numpy as np
-import scipy.misc as sm
 
 
 def computeLaplaceMatrix2(sqdist, t, L):
@@ -10,10 +9,13 @@ def computeLaplaceMatrix2(sqdist, t, L):
     # FIXME Is the scaling ok in here?
     lt = np.log(2.0 / t)
     ne.evaluate('sqdist / (-2.0 * t)', out=L)
-    # FIXME subtract the largest element to simulate logsumexp
-    logdensity = sm.logsumexp(L, axis=1)[:, None]
+    # sqdist is nonnegative, with 0 on the diagonal
+    # so the largest element of each row of L is 0
+    # no logsumexp needed
+    density = ne.evaluate("sum(exp(L), axis=1)")[:, None]
+    ne.evaluate("log(density)", out=density)
     # sum in rows must be 1, except for 2/t factor
-    ne.evaluate('exp(L - logdensity + lt)', out=L)
+    ne.evaluate('exp(L - density + lt)', out=L)
     # fix diagonal to account for -f(x)?
     L[np.diag_indices(len(L))] -= 2.0 / t
 

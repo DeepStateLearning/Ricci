@@ -9,7 +9,7 @@ np.seterr(all="print")  # divide='raise', invalid='raise')
 #   simulation parameters
 #
 runs = 2000  # how many iterations
-show = 5  # how frequently we show the result
+show = 20  # how frequently we show the result
 eta = 0.0075  # factor of Ricci that is added to distance squared
 threshold = 0.0001  # clustering threshold
 # upperthreshold = 0.3  # won't try to cluster if distances in ambiguity interva (threshold, upperthreshold)
