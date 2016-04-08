@@ -90,9 +90,9 @@ def graph(threshold, mode="sort"):
     return num
 
 
-# sqdist, pointset = noisymoons(500, noise)
+sqdist, pointset = noisymoons(500, noise)
 
-sqdist, pointset = two_clusters(500, 250, 7)
+# sqdist, pointset = two_clusters(500, 250, 7)
 # sqdist, pointset = perm_circles_200()
 # sqdist, pointset = four_clusters_3d(100,7)
 dim = len(pointset[0])

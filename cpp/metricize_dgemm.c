@@ -3,14 +3,6 @@ int i;
 int count=1;
 double error;
 
-// sqdist to dist
-#pragma omp parallel for private(i) shared(d, d2)
-for (i=0; i<n*n; i++)
-{
-    d[i] = sqrt(d[i]);
-    d2[i] = d[i];
-}
-
 error = 1;
 while (error > 10e-12)
 {
@@ -25,13 +17,7 @@ while (error > 10e-12)
             error=d[i]-d2[i];
         d[i] = d2[i];
     }
-    
+  
     if ((limit > 0) && (++count > limit)) break;
-    // printf("%f ", error);
+    //printf("%f ", error);
 }
-// printf("\n");
-
-// dist to sqdist
-#pragma omp parallel for private(i) shared(d)
-for (i=0; i<n*n; i++)
-    d[i] *= d[i];
