@@ -148,7 +148,8 @@ def build_fastmath_extension():
     mod.compile(extra_compile_args=["-O3 -DNUMCORE={}".format(ncpus),
                                     "-fopenmp -march=native",
                                     "-fomit-frame-pointer", "-ffast-math",
-                                    "-mfpmath=sse"],
+                                    "-mfpmath=sse",
+                                    "-Wno-unused-variable"],
                 verbose=2, libraries=['gomp'],
                 )
 
@@ -208,7 +209,6 @@ def build_extension():
     mod.add_function(func)
 
     # metricize via BLIS framework
-    # FIXME add avx kernel
     with open('cpp/dgemm.c', 'r') as f:
         support_code = f.read()
     with open('cpp/metricize_dgemm.c', 'r') as f:
@@ -223,7 +223,8 @@ def build_extension():
     mod.compile(extra_compile_args=["-O3 -DNUMCORE={}".format(ncpus),
                                     "-fopenmp -march=native",
                                     "-fomit-frame-pointer",
-                                    "-mfpmath=sse"],
+                                    "-mfpmath=sse",
+                                    "-Wno-unused-variable"],
                 verbose=2, libraries=['gomp'],
                 )
 
@@ -263,7 +264,10 @@ try:
         """
         if temp is None:
             temp = np.zeros_like(dist)
+        ne.evaluate('exp(sqrt(dist))', out=dist)
+        np.copyto(temp, dist)
         ctools.metricize_gemm(dist, temp, limit)
+        ne.evaluate('log(dist)**2', out=dist)
 
     def metricize5b(dist, temp=None, limit=0):
         """
@@ -273,7 +277,10 @@ try:
         """
         if temp is None:
             temp = np.zeros_like(dist)
+        ne.evaluate('exp(sqrt(dist))', out=dist)
+        np.copyto(temp, dist)
         ctools_fastmath.metricize_gemm(dist, temp, limit)
+        ne.evaluate('log(dist)**2', out=dist)
 
     def components(dist, threshold, colors):
         """
@@ -496,6 +503,25 @@ if __name__ == "__main__":
     # FIXME add missing tests for components
     suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
     unittest.TextTestRunner(verbosity=2).run(suite)
+    exit(0)
+    from datetime import datetime
+    from Ricci import add_AB_to_C
+    A = np.random.rand(4000, 4000)
+    A = A + A.T
+    np.fill_diagonal(A, 0.0)
+    B = A.copy()
+    C = A.copy()
+    D = A.copy()
+    start = datetime.now()
+    add_AB_to_C(B, B, D)
+    print datetime.now()-start
+    start = datetime.now()
+    metricize5(B)
+    print datetime.now()-start
+    # start = datetime.now()
+    # metricize5b(A, C)
+    # print datetime.now()-start
+    # print np.max(np.abs(A-B))
     # ToolsTests.runTest = lambda self: True
     # t = ToolsTests()
     # t.test_metricize4()

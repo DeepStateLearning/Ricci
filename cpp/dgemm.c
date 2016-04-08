@@ -18,6 +18,8 @@
 // The above implements the BLIS framework:
 //      https://github.com/flame/blis
 //
+
+// FIXME switch to syrk for better performance
 #define MC  96
 #define KC  256
 #define NC  4096
@@ -28,8 +30,11 @@
 // zero element for the reduction
 #define MAX 1e+300
 // new pointwise operation
-#define add(x,y)  ((x)+(y))
-// redefine these to get other generalized inner products
+#define add(x,y)  ((x)*(y))
+// redefine these to get other generalized inner products in pure C
+// inline assembly requires changes by hand, 
+// e.g. addpd->minpd and mulpd->addpd in our case
+// max is automatically embedded, but also not necessary if MAX=0
 
 //
 //  Local buffers for storing panels from A, B and C
@@ -39,7 +44,7 @@
 #include "cpp/kernel_ulmBLAS_pureC.c"
 #elif defined __AVX__
 #include "cpp/kernel_BLIS_avx.c"
-#elif defined __SSE__
+#elif defined __SSE3__
 #include "cpp/kernel_ulmBLAS_sse.c"
 #else 
 #include "cpp/kernel_ulmBLAS_pureC.c"
@@ -273,8 +278,6 @@ dgemm_nn(int            n,
             pack_B(kc, nc,
                    &B[l*KC*incRowB+j*NC*incColB], incRowB, incColB,
                    _B);
-            // Could we parallelize this loop? With private A?
-            // k=m=n, MC=KC, so we could do i<=l to get one triangle?
 #pragma omp parallel for default(shared) private(i, mc) num_threads(numcore)
             for (i=0; i<mb; ++i) {
                 mc = (i!=mb-1 || _mc==0) ? MC : _mc;
