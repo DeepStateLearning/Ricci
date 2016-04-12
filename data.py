@@ -68,6 +68,7 @@ def four_clusters_3d(k, sep, dim=3):
     return cdist(Z, Z, 'sqeuclidean'), Z
 
 
+# FIXME this one returns non-metric distance matrix (FAILED test)
 def cyclegraph(n, noise):
     """
     Return squared distances for cuclic graph with n points.
