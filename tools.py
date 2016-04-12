@@ -5,6 +5,8 @@ import numpy as np
 import numexpr as ne
 from numba import jit
 import threading
+np.set_printoptions(precision=4, suppress=True)
+np.set_printoptions(threshold=np.nan)
 
 
 def test_speed(f, *args, **kwargs):
@@ -134,14 +136,22 @@ def build_fastmath_extension():
     d2 = np.zeros((2, 2))
     limit = 4
 
-    # metricize via BLIS framework
-    with open('cpp/dgemm.c', 'r') as f:
+    with open('cpp/fw_tiled.c', 'r') as f:
         support_code = f.read()
-    with open('cpp/metricize_dgemm.c', 'r') as f:
+    with open('cpp/fw.c', 'r') as f:
         code = f.read()
-    func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2', 'limit'])
+    func = ext_tools.ext_function('metricize_fw', code, ['d', 'd2'])
     func.customize.add_support_code(support_code)
     mod.add_function(func)
+
+    # metricize via BLIS framework
+    # with open('cpp/dgemm.c', 'r') as f:
+    #     support_code = f.read()
+    # with open('cpp/metricize_dgemm.c', 'r') as f:
+    #     code = f.read()
+    # func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2', 'limit'])
+    # func.customize.add_support_code(support_code)
+    # mod.add_function(func)
     mod.customize.add_header('<omp.h>')
     mod.customize.add_header('<cmath>')
     mod.customize.add_header('<x86intrin.h>')
@@ -149,7 +159,8 @@ def build_fastmath_extension():
                                     "-fopenmp -march=native",
                                     "-fomit-frame-pointer", "-ffast-math",
                                     "-mfpmath=sse",
-                                    "-Wno-unused-variable"],
+                                    "-Wno-unused-variable",
+                                    "-ftree-vectorize"],
                 verbose=2, libraries=['gomp'],
                 )
 
@@ -232,11 +243,22 @@ def build_extension():
 # set current metricize method
 metricize = metricize3
 # replace wih C++ if possible
+
+build_fastmath_extension()
+build_extension()
+
 try:
-    build_extension()
-    build_fastmath_extension()
     import ctools
     import ctools_fastmath
+
+    def metricize_fw(dist):
+        """
+        Metricize a matrix of "squared distances".
+
+        C++ extension leveraging matrix symmetry and OpenMP.
+        """
+        temp = dist.copy()
+        ctools_fastmath.metricize_fw(dist, temp)
 
     def metricize4(dist):
         """
@@ -501,27 +523,29 @@ class ToolsTests (unittest.TestCase):
 
 if __name__ == "__main__":
     # FIXME add missing tests for components
-    suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
-    unittest.TextTestRunner(verbosity=2).run(suite)
-    exit(0)
+    # suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
+    # unittest.TextTestRunner(verbosity=2).run(suite)
+    # exit(0)
     from datetime import datetime
-    from Ricci import add_AB_to_C
-    A = np.random.rand(4000, 4000)
+    n = 256
+    A = np.random.rand(n, n)
     A = A + A.T
     np.fill_diagonal(A, 0.0)
     B = A.copy()
     C = A.copy()
     D = A.copy()
+    metricize4(D)
     start = datetime.now()
-    add_AB_to_C(B, B, D)
+    metricize_fw(A)
     print datetime.now()-start
     start = datetime.now()
+    # add_AB_to_C(B, B, D)
     metricize5(B)
     print datetime.now()-start
     # start = datetime.now()
     # metricize5b(A, C)
     # print datetime.now()-start
-    # print np.max(np.abs(A-B))
+    print np.max(np.abs(A-B))
     # ToolsTests.runTest = lambda self: True
     # t = ToolsTests()
     # t.test_metricize4()
