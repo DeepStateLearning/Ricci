@@ -3,7 +3,8 @@
 import timeit
 import numpy as np
 import numexpr as ne
-from pyfftw import zeros_aligned
+from pyfftw import zeros_aligned, simd_alignment
+import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=4, suppress=True)
 np.set_printoptions(threshold=np.nan)
@@ -17,6 +18,80 @@ def test_speed(f, *args, **kwargs):
         repeat = 5
     t = timeit.repeat(lambda: f(*args), repeat=repeat, number=1)
     print 'Fastest out of {}: {} s'.format(repeat, min(t))
+
+
+def get_matrices(M, n):
+    """ Make sure M is aligned and generate n other matrices. """
+    print "Aligning to ", simd_alignment, " bytes"
+    m = zeros_aligned(M.shape)
+    np.copyto(m, M)
+    M = m
+    lst = []
+    for _ in xrange(n):
+        lst.append(zeros_aligned(M.shape))
+    lst.append(M)
+    return lst
+
+
+def init_plot(dim):
+    """ Create empty plot container for later real time updates. """
+    fig = plt.figure()
+    if dim == 2:
+        ax = fig.add_subplot(1, 1, 1)
+    else:
+        from mpl_toolkits.mplot3d import Axes3D
+        ax = fig.add_subplot(111, projection='3d')
+    return plt, ax
+
+
+def graph(threshold, pointset, sqdist, ax, dim, mode="sort"):
+    """
+    Draw pointset as colored connected components.
+
+    By default each component has a different color based on cluster number.
+
+    They can also be colored using distance to one of the points of one of them.
+    However, this does not work well for more than two clusters, since distances
+    between clusters are about 1. (mode="dist")
+
+    Components can also be sorted according to the distance to a point from one
+    of them, to make less random looking coloring. (mode="sort")
+
+    Distances are measured between representatives of the component, so close
+    components may end up having large distance.
+    """
+    c = np.zeros(len(pointset), dtype=int)
+    num = components(sqdist, 0.001, c)
+    print "Number of components: ", num
+    # now c contains uniquely numbered components
+
+    # replace colors with distance to a point
+    # component number and a representative
+    values, points = np.unique(c, return_index=True)
+    dists = sqdist[points[0], points]
+    if mode == "dist":
+        c = dists[c]
+    elif mode == "sort":
+        a = sorted(zip(values, dists), key=lambda e: e[1])
+        a = np.array(a)[:, 0]
+        c = a[c]
+    if len(points) < 10:
+        print "Distances between components: \n", sqdist[np.ix_(points, points)]
+    else:
+        print "Distances to component 0: \n", dists
+    plt.cla()
+    if dim == 2:
+        ax.scatter(pointset[:, 0], pointset[:, 1],  c=c, cmap='gnuplot2')
+        plt.axis('equal')
+    elif dim == 3:
+        # from mpl_toolkits.mplot3d import Axes3D
+        ax.scatter(pointset[:, 0], pointset[:, 1], pointset[:, 2],  c=c,
+                   cmap='gnuplot2')
+    plt.draw()
+    plt.pause(0.01)
+    return num
+
+
 
 
 def build_fastmath_extension():

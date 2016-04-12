@@ -19,7 +19,7 @@ def add_AB_to_C(A, B, C):
     gemm = sl.get_blas_funcs("gemm", (A, B, C))
     assert np.isfortran(C.T) and np.isfortran(A.T) and np.isfortran(B.T)
     D = gemm(1.0, B.T, A.T, beta=1, c=C.T, overwrite_c=1)
-    assert D.base is C
+    assert D.base is C or D.base is C.base
 
 
 def applyRicci(sqdist, eta, T, Ricci, mode='sym'):
