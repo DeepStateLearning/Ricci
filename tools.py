@@ -3,8 +3,8 @@
 import timeit
 import numpy as np
 import numexpr as ne
-from numba import jit
-import threading
+from pyfftw import zeros_aligned
+
 np.set_printoptions(precision=4, suppress=True)
 np.set_printoptions(threshold=np.nan)
 
@@ -19,104 +19,6 @@ def test_speed(f, *args, **kwargs):
     print 'Fastest out of {}: {} s'.format(repeat, min(t))
 
 
-def metricize3(dist):
-    """
-    Metricize a matrix of "squared distances".
-
-    Pure numpy implementation.
-    """
-    ne.evaluate("sqrt(dist)", out=dist)
-    error = 1
-    new = np.zeros_like(dist)
-    while error > 1E-12:
-        error = 0.0
-        for i in xrange(len(dist)):
-            new[i, :] = np.amin(dist[i, :, None] + dist, axis=0)
-            np.minimum(dist[i, :], new[i, :], out=new[i, :])
-            error += np.sum(dist[i, :] - new[i, :])
-            dist[i, :] = new[i, :]
-    ne.evaluate('dist**2', out=dist)
-
-
-def parallel(num, numthreads=4):
-    """
-    Decorator to execute a function with the first few args split into chunks.
-
-    All arguments should be numpy arrays.
-
-    The chunks should be independent computationally.
-
-    Can be used as a replacement for OpenMP parallel for applied to outer loop.
-
-    Arguments:
-        num        - number of function arguments to split
-        numthreads - number of threads
-
-    One of the arguments should be the output array. This one should be split
-    together with at least one of the input arguments.
-
-    Example:
-        (n,k), (k,l) -> (n, l) : Put output as first argument, and choose to
-                    split 2 arguments. Then the problem will be split into
-                    numthreads subproblems with n replaced by n/numthreads.
-
-    Notes:
-        Function relies on array_split returning views so that each chunk
-        is placed in the appropriate part of the output array automatically.
-
-        Chunks will run parallel only if GIL is released by the function.
-        E.g. use nopython and nogil mode in numba jit.
-    """
-    def chunks_decorator(fun):
-        def func_wrapper(*args):
-            # FIXME switch to Queue/workers setup for smaller chunks ?
-            chunks = [np.array_split(arg, numthreads) for arg in args[:num]]
-            chunks = map(list, zip(*chunks))
-            for chunk in chunks:
-                chunk.extend(args[num:])
-            threads = [threading.Thread(target=fun, args=chunk)
-                       for chunk in chunks]
-            for thread in threads:
-                thread.start()
-            for thread in threads:
-                thread.join()
-        return func_wrapper
-    return chunks_decorator
-
-
-@parallel(2, numthreads=4)
-@jit("void(f8[:,:], f8[:,:], f8[:,:])", nopython=True, nogil=True)
-def _inner_loops(dist, new, distunsplit):
-    for i in xrange(len(dist)):
-        for j in xrange(len(distunsplit)):
-            d_ij = dist[i, j]
-            for k in xrange(len(distunsplit)):
-                dijk = dist[i, k] + distunsplit[j, k]
-                if dijk < d_ij:
-                    d_ij = dijk
-            new[i, j] = d_ij
-
-
-def metricize2(dist):
-    """
-    Metricize a matrix of "squared distances".
-
-    Compiled using numba JIT and parallelized.
-    """
-    ne.evaluate("sqrt(dist)", out=dist)
-    error = 1
-    new = np.zeros_like(dist)
-    while error > 1E-12:
-        _inner_loops(dist, new, dist)
-        error = ne.evaluate("sum(dist-new)")
-        dist[:, :] = new
-    ne.evaluate('dist**2', out=dist)
-
-
-# metricize2 runs slowly the first time
-metricize2(np.zeros((16, 16)))
-
-
 def build_fastmath_extension():
     """
     Build fastmath C/C++ extension.
@@ -128,7 +30,7 @@ def build_fastmath_extension():
     """
     from scipy.weave import ext_tools
     mod = ext_tools.ext_module('ctools_fastmath')
-    # number of physical cpus
+    # number of physical cpus/core
     import mkl
     ncpus = mkl.get_max_threads()
     # type declarations
@@ -149,7 +51,7 @@ def build_fastmath_extension():
     #     support_code = f.read()
     # with open('cpp/metricize_dgemm.c', 'r') as f:
     #     code = f.read()
-    # func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2', 'limit'])
+    # func =ext_tools.ext_function('metricize_gemm', code, ['d', 'd2', 'limit'])
     # func.customize.add_support_code(support_code)
     # mod.add_function(func)
     mod.customize.add_header('<omp.h>')
@@ -187,19 +89,6 @@ def build_extension():
     threshold = 0.5
     limit = 4
     colors = np.zeros(2, dtype=int)
-
-    # metricize using fully parallelized triangular loop
-    # this function is actually slower with fastmath (when avx2 is used? a bug?)
-    with open('cpp/metricize.cpp', 'r') as f:
-        code = f.read()
-    func = ext_tools.ext_function('metricize', code, ['d'])
-    mod.add_function(func)
-
-    # metricize using fully parallelized triangular loop
-    with open('cpp/metricize_random.cpp', 'r') as f:
-        code = f.read()
-    func = ext_tools.ext_function('metricize_random', code, ['d'])
-    mod.add_function(func)
 
     # find connected components and number them
     # fills last argument with component numbers for vertices
@@ -240,83 +129,77 @@ def build_extension():
                 )
 
 
-# set current metricize method
-metricize = metricize3
-# replace wih C++ if possible
-
-build_fastmath_extension()
-build_extension()
-
 try:
+    build_fastmath_extension()
+    build_extension()
+    import ctools
+    import ctools_fastmath
+except:
+    # might have been built on a different machine
+    # try rebuilding
+    import os
+    os.system("rm ctools*")
+    build_fastmath_extension()
+    build_extension()
     import ctools
     import ctools_fastmath
 
-    def metricize_fw(dist):
-        """
-        Metricize a matrix of "squared distances".
 
-        C++ extension leveraging matrix symmetry and OpenMP.
-        """
-        temp = dist.copy()
-        ctools_fastmath.metricize_fw(dist, temp)
+def metricize_fw(dist):
+    """
+    Metricize a matrix of "squared distances".
 
-    def metricize4(dist):
-        """
-        Metricize a matrix of "squared distances".
+    Tiled Floyd-Warshall algorithm mixed with BLIS.
 
-        C++ extension leveraging matrix symmetry and OpenMP.
-        """
-        ctools.metricize(dist)
+    !! Work in progress !!
+     - only works for number of points divisible by 128
+    """
+    temp = dist.copy()
+    ctools_fastmath.metricize_fw(dist, temp)
 
-    def metricize4b(dist):
-        """
-        Metricize a matrix of "squared distances".
 
-        C++ extension leveraging matrix symmetry and OpenMP.
-        """
-        ctools.metricize_random(dist)
+def metricize(dist, temp=None, limit=0):
+    """
+    Metricize based on BLIS framework for BLAS.
 
-    def metricize5(dist, temp=None, limit=0):
-        """
-        Metricize based on BLIS framework for BLAS.
+    Modified ulmBLAS code for dgemm_nn with optimal kernel.
 
-        Modified ulmBLAS code for dgemm_nn with optimal kernel.
+    If limit is larger than 0, then only this many rounds will happen.
+    """
+    if temp is None:
+        temp = zeros_aligned(dist.shape, n=32)
+    # We use subtropical matrix multiplication since it is faster
+    # Starting with Skylake the tropical one will be as fast
+    ne.evaluate('exp(sqrt(dist))', out=dist)
+    np.copyto(temp, dist)
+    ctools.metricize_gemm(dist, temp, limit)
+    ne.evaluate('log(dist)**2', out=dist)
 
-        If limit is larger than 0, then only this many rounds will hapen.
-        """
-        if temp is None:
-            temp = np.zeros_like(dist)
-        ne.evaluate('exp(sqrt(dist))', out=dist)
-        np.copyto(temp, dist)
-        ctools.metricize_gemm(dist, temp, limit)
-        ne.evaluate('log(dist)**2', out=dist)
 
-    def metricize5b(dist, temp=None, limit=0):
-        """
-        Metricize based on BLIS framework for BLAS.
+def metricize_pureC(dist, temp=None, limit=0):
+    """
+    Metricize based on BLIS framework for BLAS.
 
-        Modified ulmBLAS code for dgemm_nn.
-        """
-        if temp is None:
-            temp = np.zeros_like(dist)
-        ne.evaluate('exp(sqrt(dist))', out=dist)
-        np.copyto(temp, dist)
-        ctools_fastmath.metricize_gemm(dist, temp, limit)
-        ne.evaluate('log(dist)**2', out=dist)
+    Modified ulmBLAS code for dgemm_nn.
+    """
+    if temp is None:
+        temp = zeros_aligned(dist.shape, n=32)
+    # We use subtropical matrix multiplication since it is faster
+    # Starting with Skylake the tropical one will be as fast
+    ne.evaluate('exp(sqrt(dist))', out=dist)
+    np.copyto(temp, dist)
+    ctools_fastmath.metricize_gemm(dist, temp, limit)
+    ne.evaluate('log(dist)**2', out=dist)
 
-    def components(dist, threshold, colors):
-        """
-        Find connected components based on closeness threshold.
 
-        Returns number of components and fills colors array with
-        numbers (colors) for vertices.
-        """
-        return ctools.components(dist, threshold, colors)
+def components(dist, threshold, colors):
+    """
+    Find connected components based on closeness threshold.
 
-    metricize = metricize5
-except:
-    print "   !!! Error: C++ extension failed to build !!!   "
-    metricize4 = metricize
+    Returns number of components and fills colors array with
+    numbers (colors) for vertices.
+    """
+    return ctools.components(dist, threshold, colors)
 
 
 def sanitize(sqdist, how='L_inf', clip=np.inf, norm=1.0, temp=None):
@@ -343,6 +226,7 @@ def sanitize(sqdist, how='L_inf', clip=np.inf, norm=1.0, temp=None):
 
 def is_metric(sqdist, eps=1E-12):
     """ Check if the matrix is a true squared distance matrix. """
+    # FIXME reimplement in C
     dist = ne.evaluate("sqrt(sqdist)")
     for i in xrange(len(dist)):
         temp = ne.evaluate("diT + dist - di < -eps",
@@ -358,44 +242,20 @@ def is_stuck(a, b, eta):
     return ne.evaluate("a-b<eta/50").all()
 
 
-def is_clustered_old(sqdist, threshold):
+def is_clustered(sqdist, threshold):
     """
     Check if the metric is cluster.
 
     If the relations d(x,y)<threshold partitions the point set, return True.
+
+    Implemented in C++ using modified depth first connected component search.
     """
-    n = len(sqdist)
-    partition = (sqdist < threshold)
-    # print partition
-    for i in range(n):
-        # setpart = partition[i, :]
-        for j in range(i, n):
-            if (partition[i, :] * partition[j, :]).any():
-                if not np.array_equal(partition[i, :], partition[j, :]):
-                    return False
-    print 'clustered!!'
-    # np.savetxt("clust.csv", partition, fmt="%5i", delimiter=",")
-    # print 'saved to cust.csv'
-    return True
-
-try:
-    ctools.clustered
-
-    def is_clustered(sqdist, threshold):
-        """
-        Check if the metric is cluster.
-
-        If the relations d(x,y)<threshold partitions the point set, return True.
-
-        Implemented in C++ using depth first connected component search.
-        """
-        return ctools.clustered(sqdist, threshold)
-except:
-    is_clustered = is_clustered_old
+    return ctools.clustered(sqdist, threshold)
 
 
 def color_clusters(sqdist, threshold):
     """Assuming the metric is clustered, return a colored array."""
+    # FIXME This is done by components?
     n = len(sqdist)
     partition = (sqdist < threshold)
     clust = np.zeros(n, dtype=int)
@@ -425,18 +285,18 @@ class ToolsTests (unittest.TestCase):
 
     """ Correctness and speed tests. """
 
-    def correct(self, f):
-        """ Test correctness against metricize3 on random data sets. """
+    def correct(self, f, g):
+        """ Check if different methods give the same result. """
         threshold = 1E-10
         print
-        for n in range(200, 500, 100):
+        for n in range(256, 1024, 128):
             d = np.random.rand(n, n)
             d = d + d.T
             np.fill_diagonal(d, 0)
             d2 = d.copy()
             d3 = d.copy()
-            metricize3(d)
-            f(d2)
+            f(d)
+            g(d2)
             print "Changed entries: {} out of {}." \
                 .format(n*n - np.isclose(d, d3).sum(), n*n)
             error = np.max(np.abs(d-d2))
@@ -444,88 +304,41 @@ class ToolsTests (unittest.TestCase):
             self.assertLess(error, threshold)
             self.assertTrue(is_metric(d))
 
-    def test_metricize2(self):
-        """ Test metricize2 (parallelized) against metricize3 (numpy). """
-        self.correct(metricize2)
+    # def test_metricize_pureC(self):
+    #     """ Test optimized BLIS metricize against pure C BLIS metricize. """
+    #     self.correct(metricize, metricize_pureC)
 
-    def test_metricize4(self):
-        """ Test metricize4 (C++) against metricize3 (numpy). """
-        self.correct(metricize4)
+    def test_metricize_fw(self):
+        """ Test Floyd-Warshall metricize against optimized BLIS metricize. """
+        self.correct(metricize, metricize_fw)
 
-    def test_metricize5(self):
-        """ Test metricize5 (C, asm, and BLIS) against metricize3 (numpy). """
-        self.correct(metricize5)
-
-    def test_metricize5b(self):
-        """ Test metricize5b (pure C and BLIS) against metricize3 (numpy). """
-        self.correct(metricize5)
-
-    def speed(self, f, s=200):
+    def speed(self, f, s=256):
         """ Test speed on larger data sets. """
         print
-        for n in range(s, 4*s, s):
+        for n in range(s, 9*s, s):
             print "Points: ", n
             d = np.random.rand(n, n)
             d = d + d.T
             np.fill_diagonal(d, 0)
             test_speed(f, d, repeat=1)
 
-    def test_speed_metricize2(self):
-        """ Speed of the parallelized metricize. """
-        self.speed(metricize2)
+    def test_speed_metricize(self):
+        """ Speed of the optimized BLIS metricize. """
+        self.speed(metricize)
 
-    def test_speed_metricize3(self):
-        """ Speed of the numpy metricize. """
-        self.speed(metricize3)
+    # def test_speed_metricize_pureC(self):
+    #     """ Speed of the numpy metricize. """
+    #     self.speed(metricize_pureC)
 
-    def test_speed_metricize4(self):
-        """ Speed of the C++ metricize. """
-        self.speed(metricize4)
-        self.speed(metricize4, 500)
-
-    def test_speed_metricize4b(self):
-        """ Speed of the random C++ metricize. """
-        self.speed(metricize4b)
-
-    def test_speed_metricize5(self):
-        """ Speed of the C and asm BLIS metricize. """
-        self.speed(metricize5)
-        self.speed(metricize5, 500)
-        A = np.random.rand(1500, 1500)
-        print "Same size np.dot(A, A) (metricize does a few multiplications):"
-        test_speed(np.dot, A, A, repeat=1)
-
-    def test_speed_metricize5b(self):
-        """ Speed of the pure C BLIS metricize. """
-        self.speed(metricize5b)
-        self.speed(metricize5b, 500)
-        A = np.random.rand(1500, 1500)
-        print "Same size np.dot(A, A) (metricize does a few multiplications):"
-        test_speed(np.dot, A, A, repeat=1)
-
-    def test_clustered(self):
-        """ Check if fast clustered check works. """
-        from ctools import clustered
-        for n in range(100, 120):
-            # 5 clusters
-            A = np.random.randint(5, size=n)+1
-            A = np.array(A, dtype=float)
-            AA = ne.evaluate("AT*A-A*A", global_dict={'AT': A[:, None]})
-            ne.evaluate("where(AA!=0, 1.0, AA)", out=AA)
-            # test clustered first
-            self.assertTrue(is_clustered(AA, 0.5))
-            for k in range(0, 10):
-                # introduce a few extra connections
-                i, j = np.random.randint(n, size=2)
-                AA[i, j] = AA[j, i] = 0.0
-                self.assertTrue(is_clustered_old(AA, 0.5) == clustered(AA, 0.5))
-
+    def test_speed_metricize_fw(self):
+        """ Speed of the Floy-Warshall metricize. """
+        self.speed(metricize_fw)
 
 if __name__ == "__main__":
-    # FIXME add missing tests for components
-    # suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
-    # unittest.TextTestRunner(verbosity=2).run(suite)
-    # exit(0)
+    # FIXME add tests for components and is_clustered
+    suite = unittest.TestLoader().loadTestsFromTestCase(ToolsTests)
+    unittest.TextTestRunner(verbosity=2).run(suite)
+    exit(0)
     from datetime import datetime
     n = 256
     A = np.random.rand(n, n)
@@ -534,23 +347,14 @@ if __name__ == "__main__":
     B = A.copy()
     C = A.copy()
     D = A.copy()
-    metricize4(D)
     start = datetime.now()
     metricize_fw(A)
     print datetime.now()-start
     start = datetime.now()
     # add_AB_to_C(B, B, D)
-    metricize5(B)
+    metricize(B)
     print datetime.now()-start
     # start = datetime.now()
     # metricize5b(A, C)
     # print datetime.now()-start
     print np.max(np.abs(A-B))
-    # ToolsTests.runTest = lambda self: True
-    # t = ToolsTests()
-    # t.test_metricize4()
-    # t.test_metricize5()
-    # t.test_metricize5b()
-    # t.test_speed_metricize4()
-    # t.test_speed_metricize5()
-    # t.test_speed_metricize5b()
