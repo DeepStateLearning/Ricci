@@ -8,7 +8,7 @@ while (error > 10e-12)
 {
     error = 0;
     // shortest paths to d2
-    dgemm_nn(n, d, d2);
+    dgemm(n, d, d2);
 
 #pragma omp parallel for private(i) shared(d, d2) reduction(max:error)
     for (i=0;i<n*n; i++)

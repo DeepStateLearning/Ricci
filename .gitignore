@@ -1,3 +1,7 @@
 .*
 *.csv
 ctools*
+*.so
+*.pyc
+cpp/*.o
+cpp/*.so
