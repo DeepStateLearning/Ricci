@@ -2,10 +2,6 @@
 #define MR  4
 #define NR  4
 
-static double _A[MC*KC];
-static double _B[KC*NC];
-static double _C[MR*NR];
-
 //
 //  Micro kernel for multiplying panels from A and B.
 //
@@ -42,7 +38,6 @@ dgemm_micro_kernel(long kc,
     if (partial) {
         for (j=0; j<NR; ++j) {
             for (i=0; i<MR; ++i) {
-                // this works on private _C array
                 C[i*incRowC+j*incColC] = MAX;
             }
         }
@@ -54,10 +49,7 @@ dgemm_micro_kernel(long kc,
 //
     for (j=0; j<NR; ++j) {
         for (i=0; i<MR; ++i) {
-            // omp atomic here? but how with min() and C on both sides
-            // C[i*incRowC+j*incColC] = min(AB[i+j*MR], C[i*incRowC+j*incColC]);
-            // an attempt to avoid conflicts
-            while (C[i*incRowC+j*incColC] > AB[i+j*MR])
+            if (C[i*incRowC+j*incColC] > AB[i+j*MR])
                 C[i*incRowC+j*incColC] = AB[i+j*MR];
         }
     }

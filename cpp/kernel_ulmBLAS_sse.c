@@ -6,10 +6,6 @@
 #define MR  4
 #define NR  4
 
-static double _A[MC*KC] __attribute__ ((aligned (16)));
-static double _B[KC*NC] __attribute__ ((aligned (16)));
-static double _C[MR*NR] __attribute__ ((aligned (16)));
-
 //
 //  Micro kernel for multiplying panels from A and B.
 //
@@ -22,7 +18,7 @@ dgemm_micro_kernel(long kc,
 {
     long kb = kc / 4;
     long kl = kc % 4;
-    double beta = partial ? MAX : 0.0;
+    double beta = partial ? MAX : UNIT;
     double alpha = MAX; // used to transfer MAX to registers
 //
 //  Compute AB = A*B

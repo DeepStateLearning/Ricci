@@ -32,7 +32,6 @@ def get_matrices(M, n):
     lst.append(M)
     return lst
 
-
 def init_plot(dim):
     """ Create empty plot container for later real time updates. """
     fig = plt.figure()
@@ -92,8 +91,6 @@ def graph(threshold, pointset, sqdist, ax, dim, mode="sort"):
     return num
 
 
-
-
 def build_fastmath_extension():
     """
     Build fastmath C/C++ extension.
@@ -104,6 +101,8 @@ def build_fastmath_extension():
     on processors with AVX.
     """
     from scipy.weave import ext_tools
+    import os
+    os.system("cd cpp && make libgenmul_pureC.so libfw.so && cd ..")
     mod = ext_tools.ext_module('ctools_fastmath')
     # number of physical cpus/core
     import mkl
@@ -113,33 +112,31 @@ def build_fastmath_extension():
     d2 = np.zeros((2, 2))
     limit = 4
 
-    with open('cpp/fw_tiled.c', 'r') as f:
-        support_code = f.read()
-    with open('cpp/fw.c', 'r') as f:
-        code = f.read()
-    func = ext_tools.ext_function('metricize_fw', code, ['d', 'd2'])
-    func.customize.add_support_code(support_code)
+    # metricize using Floyd-Warshall
+    func = ext_tools.ext_function('metricize_fw', "fw(d, Nd[0]);", ['d'])
     mod.add_function(func)
 
-    # metricize via BLIS framework
-    # with open('cpp/dgemm.c', 'r') as f:
-    #     support_code = f.read()
-    # with open('cpp/metricize_dgemm.c', 'r') as f:
-    #     code = f.read()
-    # func =ext_tools.ext_function('metricize_gemm', code, ['d', 'd2', 'limit'])
-    # func.customize.add_support_code(support_code)
-    # mod.add_function(func)
-    mod.customize.add_header('<omp.h>')
+    # metricize via BLIS dgemm
+    with open('cpp/metricize_dgemm.c', 'r') as f:
+        code = f.read()
+    func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2', 'limit'])
+    mod.add_function(func)
+
+    # mod.customize.add_header('<omp.h>')
     mod.customize.add_header('<cmath>')
-    mod.customize.add_header('<x86intrin.h>')
+    # mod.customize.add_header('<x86intrin.h>')
+    mod.customize.add_header('"cpp/genmul.h"')
+    mod.customize.add_header('"cpp/floyd_warshall.h"')
     mod.compile(extra_compile_args=["-O3 -DNUMCORE={}".format(ncpus),
                                     "-fopenmp -march=native",
                                     "-fomit-frame-pointer", "-ffast-math",
                                     "-mfpmath=sse",
                                     "-Wno-unused-variable",
                                     "-ftree-vectorize"],
-                verbose=2, libraries=['gomp'],
+                verbose=2,
+                libraries=['gomp', 'genmul_pureC', 'fw'],
                 )
+    os.system("rm *.cpp")
 
 
 def build_extension():
@@ -153,6 +150,8 @@ def build_extension():
         - clustered check
     """
     from scipy.weave import ext_tools
+    import os
+    os.system("cd cpp && make libgenmul.so && cd ..")
     mod = ext_tools.ext_module('ctools')
     # number of physical cpus
     import mkl
@@ -184,8 +183,6 @@ def build_extension():
     mod.add_function(func)
 
     # metricize via BLIS framework
-    with open('cpp/dgemm.c', 'r') as f:
-        support_code = f.read()
     with open('cpp/metricize_dgemm.c', 'r') as f:
         code = f.read()
     func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2', 'limit'])
@@ -195,25 +192,27 @@ def build_extension():
     mod.customize.add_header('<vector>')
     mod.customize.add_header('<cmath>')
     mod.customize.add_header('<x86intrin.h>')
+    mod.customize.add_header('"cpp/genmul.h"')
     mod.compile(extra_compile_args=["-O3 -DNUMCORE={}".format(ncpus),
                                     "-fopenmp -march=native",
                                     "-fomit-frame-pointer",
                                     "-mfpmath=sse",
                                     "-Wno-unused-variable"],
-                verbose=2, libraries=['gomp'],
+                verbose=2,
+                libraries=['gomp', 'genmul'],
                 )
+    os.system("rm *.cpp")
 
 
+import os
 try:
-    build_fastmath_extension()
-    build_extension()
     import ctools
     import ctools_fastmath
 except:
     # might have been built on a different machine
     # try rebuilding
-    import os
     os.system("rm ctools*")
+    os.system("cd cpp && make clean && cd ..")
     build_fastmath_extension()
     build_extension()
     import ctools
@@ -229,8 +228,11 @@ def metricize_fw(dist):
     !! Work in progress !!
      - only works for number of points divisible by 128
     """
-    temp = dist.copy()
-    ctools_fastmath.metricize_fw(dist, temp)
+    # We use subtropical matrix multiplication since it is faster
+    # Starting with Skylake the tropical one will be as fast
+    ne.evaluate('exp(sqrt(dist))', out=dist)
+    ctools_fastmath.metricize_fw(dist)
+    ne.evaluate('log(dist)**2', out=dist)
 
 
 def metricize(dist, temp=None, limit=0):
@@ -242,7 +244,7 @@ def metricize(dist, temp=None, limit=0):
     If limit is larger than 0, then only this many rounds will happen.
     """
     if temp is None:
-        temp = zeros_aligned(dist.shape, n=32)
+        temp = zeros_aligned(dist.shape)
     # We use subtropical matrix multiplication since it is faster
     # Starting with Skylake the tropical one will be as fast
     ne.evaluate('exp(sqrt(dist))', out=dist)
@@ -387,10 +389,10 @@ class ToolsTests (unittest.TestCase):
         """ Test Floyd-Warshall metricize against optimized BLIS metricize. """
         self.correct(metricize, metricize_fw)
 
-    def speed(self, f, s=256):
+    def speed(self, f, s=512):
         """ Test speed on larger data sets. """
         print
-        for n in range(s, 9*s, s):
+        for n in range(s, 8*s, s):
             print "Points: ", n
             d = np.random.rand(n, n)
             d = d + d.T
@@ -402,11 +404,11 @@ class ToolsTests (unittest.TestCase):
         self.speed(metricize)
 
     # def test_speed_metricize_pureC(self):
-    #     """ Speed of the numpy metricize. """
+    #     """ Speed of the pureC  BLIS metricize. """
     #     self.speed(metricize_pureC)
 
     def test_speed_metricize_fw(self):
-        """ Speed of the Floy-Warshall metricize. """
+        """ Speed of the Floyd-Warshall metricize. """
         self.speed(metricize_fw)
 
 if __name__ == "__main__":
@@ -415,13 +417,12 @@ if __name__ == "__main__":
     unittest.TextTestRunner(verbosity=2).run(suite)
     exit(0)
     from datetime import datetime
-    n = 256
+    n = 512
     A = np.random.rand(n, n)
     A = A + A.T
     np.fill_diagonal(A, 0.0)
     B = A.copy()
     C = A.copy()
-    D = A.copy()
     start = datetime.now()
     metricize_fw(A)
     print datetime.now()-start
