@@ -4,12 +4,12 @@ CFLAGS = -fopenmp -Wall -Werror -fpic -fomit-frame-pointer -mfpmath=sse -O3 -DNU
 all: libgenmul.so libgenmul_pureC.so libgenmul_sse.so libfw.so
 
 libgenmul.so: genmul.c genmul.h genmul_defs.h macro.c
-	$(CC) -o genmul.o -c -march=native $(CFLAGS) genmul.c -lgomp
+	$(CC) -o genmul.o -c -march=native  -ftree-vectorize -fopt-info-vec $(CFLAGS) genmul.c -lgomp
 	$(CC) -shared -o libgenmul.so genmul.o -lgomp
 	cp libgenmul.so ../
 
 libgenmul_pureC.so: genmul.c genmul.h genmul_defs.h
-	$(CC) -o genmul_pureC.o -c -ffast-math -march=native -ftree-vectorize $(CFLAGS) genmul.c -lgomp
+	$(CC) -o genmul_pureC.o -c -ffast-math -march=native -fno-strict-aliasing -ftree-vectorize -fopt-info-vec $(CFLAGS) genmul.c -lgomp
 	$(CC) -shared -o libgenmul_pureC.so genmul_pureC.o -lgomp
 	cp libgenmul_pureC.so ../
 
@@ -19,7 +19,7 @@ libgenmul_sse.so: genmul.c genmul.h genmul_defs.h
 	cp libgenmul_sse.so ../
 
 libfw.so: floyd_warshall.c floyd_warshall.h macro.c
-	$(CC) -o fw.o -c -march=native $(CFLAGS) floyd_warshall.c -lgomp
+	$(CC) -o fw.o -c -march=native -ffast-math -fno-strict-aliasing -ftree-vectorize $(CFLAGS) floyd_warshall.c -lgomp
 	$(CC) -shared -o libfw.so fw.o -lgomp
 	cp libfw.so ../
 

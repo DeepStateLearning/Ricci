@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-extern void dgemm(int n, const double* A, double* C);
+extern void dgemm_nn(int n, const double* A, double* C);
 
 #ifdef __cplusplus
 }

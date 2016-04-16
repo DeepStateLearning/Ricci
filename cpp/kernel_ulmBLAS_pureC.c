@@ -25,7 +25,8 @@ dgemm_micro_kernel(long kc,
     for (l=0; l<kc; ++l) {
         for (j=0; j<NR; ++j) {
             for (i=0; i<MR; ++i) {
-                AB[i+j*MR] = min(add(A[i], B[j]), AB[i+j*MR]);
+                double s = add(A[i], B[j]);
+                AB[i+j*MR] = min(s, AB[i+j*MR]);
             }
         }
         A += MR;

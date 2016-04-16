@@ -34,7 +34,7 @@
 //  Compute C <- C + A*B
 //
 void
-dgemm(int            n,
+dgemm_nn(int            n,
          const double   *A,
          double         *C)
 {

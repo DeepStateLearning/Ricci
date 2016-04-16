@@ -48,29 +48,33 @@ static double _B[NL1*NL1] __attribute__ ((aligned (32)));
 // BLIS macro kernel
 #include "macro.c"
 
-void show(const double *M, int n)
+/*
+static void show(const double *M, int n)
 {
-    for (int i=0; i<n;i++)
+    int i, j;
+    for (i=0; i<n;i++)
     {
-        for (int j=0; j<n;j++)
+        for (j=0; j<n;j++)
             printf("%.2f ", M[i*n+j]);
         printf("\n");
     }
     printf("\n");
 }
+*/
 
 //
 // versions of Floyd-Warshall on up to three matrices
 // 
 
 // C <- min(C, C+C)
-void fwC(double *C, int n)
+static void fwC(double *C, int n)
 {
-    for (int k=0;k<n;k++)
-        for (int i=0;i<n;i++)
+    int i, j, k;
+    for (k=0;k<n;k++)
+        for (i=0;i<n;i++)
         {
             double c = C[i*n+k];
-            for (int j=0;j<n;j++)
+            for (j=0;j<n;j++)
             {
                 double s = add(c, C[k*n+j]);
                 C[i*n+j] = min(C[i*n+j], s);
@@ -78,7 +82,8 @@ void fwC(double *C, int n)
         }
 }
 
-void fwCc(double *C, int n)
+/*
+static void fwCc(double *C, int n)
 {
     // n = 32 ??
     // 8 registers for C[k,:] - read only
@@ -88,24 +93,27 @@ void fwCc(double *C, int n)
     //   - add (11, 12)
     //   - min (13, 14)
     //   - store 
-    for (int k=0;k<n;k++)
-        for (int i=0;i<n;i++)
+    int i, j, k;
+    for (k=0;k<n;k++)
+        for (i=0;i<n;i++)
         {
             double c = C[i*n+k];
-            for (int j=0;j<n;j++)
+            for (j=0;j<n;j++)
                 C[i*n+j] = min(C[i*n+j], add(c, C[k*n+j]));
         }
 }
+*/
 
 // C <- min(C, A+C)
 // FIXME pack A by columns
-void fwACC(const double *A, double *C, int n)
+static void fwACC(const double *A, double *C, int n)
 {
-    for (int k=0;k<n;k++)
-        for (int i=0;i<n;i++)
+    int i, j, k;
+    for (k=0;k<n;k++)
+        for (i=0;i<n;i++)
         {
             double a = A[i*n+k];
-            for (int j=0;j<n;j++)
+            for (j=0;j<n;j++)
             {
                 double s = add(a, C[k*n+j]);
                 C[i*n+j] = min(C[i*n+j], s);
@@ -114,13 +122,14 @@ void fwACC(const double *A, double *C, int n)
 }
 
 // C <- min(C, C+B) 
-void fwCBC(const double *B, double *C, int n)
+static void fwCBC(const double *B, double *C, int n)
 {
-    for (int k=0;k<n;k++)
-        for (int i=0;i<n;i++)
+    int i, j, k;
+    for (k=0;k<n;k++)
+        for (i=0;i<n;i++)
         {
             double c = C[i*n+k];
-            for (int j=0;j<n;j++)
+            for (j=0;j<n;j++)
             {
                 double s = add(c, B[k*n+j]);
                 C[i*n+j] = min(C[i*n+j], s);
@@ -146,10 +155,11 @@ void fwABC(const double *A, const double *B, double *C, int n, int full_n)
 */
 
 // move a block into contiguous memory
-void pack(double* _M, const double* M, int n)
+static void pack(double* _M, const double* M, int n)
 {
-    for (int i=0;i<NL1;i++)
-        for (int j=0;j<NL1;j++)
+    int i, j;
+    for (i=0;i<NL1;i++)
+        for (j=0;j<NL1;j++)
             _M[i*NL1+j] = M[i*n+j];
 }
 
@@ -164,10 +174,11 @@ void pack_col(double* _M,const  double* M, int n)
 */
 
 // move a block back to its place 
-void unpack(const double* _M, double* M, int n)
+static void unpack(const double* _M, double* M, int n)
 {
-    for (int i=0;i<NL1;i++)
-        for (int j=0;j<NL1;j++)
+    int i, j;
+    for (i=0;i<NL1;i++)
+        for (j=0;j<NL1;j++)
             M[i*n+j] = _M[i*NL1+j];
 }
 
@@ -183,10 +194,11 @@ void fw(double *d, const int n)
     pack(_C, d, n);
     fwC(_C, NL1);
     unpack(_C, d, n);
-    for (int k=0;k<m;k++)
+    int i, j, k;
+    for (k=0;k<m;k++)
     {
         // diagonal block already in _C
-#pragma omp parallel default(none) shared(_C, _CC, k, d) num_threads(numcore)
+#pragma omp parallel default(none) shared(_C, _CC, k, d) private(i, j) num_threads(numcore)
 {
 #pragma omp single
  {
@@ -220,7 +232,7 @@ void fw(double *d, const int n)
             unpack(_CC, &d[((k+1)*n+k+1)*NL1], n);
   }
         }
-        for (int j=0;j<m;j++)
+        for (j=0;j<m;j++)
         {
             if ((j==k) || (j==k+1)) continue;
 #pragma omp task depend(out:d[(k*n+j)*NL1])
@@ -238,10 +250,10 @@ void fw(double *d, const int n)
             unpack(_A, &d[(j*n+k)*NL1], n);
   }
         }
-        for (int i=0;i<m;i++)
+        for (i=0;i<m;i++)
         {
             if (i==k) continue;
-            for (int j=0;j<m;j++)
+            for (j=0;j<m;j++)
             {
                 if (j==k) continue;
                 if ((j==k+1) && (i==k+1)) continue;
@@ -256,7 +268,7 @@ void fw(double *d, const int n)
         }
  } // single
 } // parallel
-    for (int i=0;i<NL1*NL1;i++)
+    for (i=0;i<NL1*NL1;i++)
         _C[i] = _CC[i];
     }           
 }
