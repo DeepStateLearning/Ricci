@@ -102,11 +102,12 @@ def build_fastmath_extension():
     """
     from scipy.weave import ext_tools
     import os
-    os.system("cd cpp && make libgenmul_pureC.so libfw.so && cd ..")
-    mod = ext_tools.ext_module('ctools_fastmath')
-    # number of physical cpus/core
     import mkl
     ncpus = mkl.get_max_threads()
+    os.system("OMP_NUM_THREADS={} make -C cpp/ libgenmul_pureC.so libfw.so"
+              .format(ncpus))
+    mod = ext_tools.ext_module('ctools_fastmath')
+    # number of physical cpus/core
     # type declarations
     d = np.zeros((2, 2))
     d2 = np.zeros((2, 2))
@@ -151,11 +152,11 @@ def build_extension():
     """
     from scipy.weave import ext_tools
     import os
-    os.system("cd cpp && make libgenmul.so && cd ..")
-    mod = ext_tools.ext_module('ctools')
-    # number of physical cpus
     import mkl
     ncpus = mkl.get_max_threads()
+    os.system("OMP_NUM_THREADS={} make -C cpp/ libgenmul.so".format(ncpus))
+    mod = ext_tools.ext_module('ctools')
+    # number of physical cpus
     print "Number of physical cores: ", ncpus
     # type declarations
     d = np.zeros((2, 2))
@@ -249,7 +250,7 @@ def metricize(dist, temp=None, limit=0):
     # Starting with Skylake the tropical one will be as fast
     ne.evaluate('exp(sqrt(dist))', out=dist)
     np.copyto(temp, dist)
-    ctools.metricize_gemm(dist, temp, limit)
+    ctools.metricize_gemm(dist, temp, limit=4)
     ne.evaluate('log(dist)**2', out=dist)
 
 
@@ -366,7 +367,7 @@ class ToolsTests (unittest.TestCase):
         """ Check if different methods give the same result. """
         threshold = 1E-10
         print
-        for n in range(256, 1024, 128):
+        for n in [640, 1280]*3:
             d = np.random.rand(n, n)
             d = d + d.T
             np.fill_diagonal(d, 0)
@@ -381,18 +382,18 @@ class ToolsTests (unittest.TestCase):
             self.assertLess(error, threshold)
             self.assertTrue(is_metric(d))
 
-    # def test_metricize_pureC(self):
-    #     """ Test optimized BLIS metricize against pure C BLIS metricize. """
-    #     self.correct(metricize, metricize_pureC)
+    def test_metricize_pureC(self):
+        """ Test optimized BLIS metricize against pure C BLIS metricize. """
+        self.correct(metricize, metricize_pureC)
 
     def test_metricize_fw(self):
         """ Test Floyd-Warshall metricize against optimized BLIS metricize. """
         self.correct(metricize, metricize_fw)
 
-    def speed(self, f, s=512):
+    def speed(self, f, s=640):
         """ Test speed on larger data sets. """
         print
-        for n in range(s, 8*s, s):
+        for n in range(s, 6*s, s):
             print "Points: ", n
             d = np.random.rand(n, n)
             d = d + d.T
@@ -403,9 +404,9 @@ class ToolsTests (unittest.TestCase):
         """ Speed of the optimized BLIS metricize. """
         self.speed(metricize)
 
-    # def test_speed_metricize_pureC(self):
-    #     """ Speed of the pureC  BLIS metricize. """
-    #     self.speed(metricize_pureC)
+    def test_speed_metricize_pureC(self):
+        """ Speed of the pureC  BLIS metricize. """
+        self.speed(metricize_pureC)
 
     def test_speed_metricize_fw(self):
         """ Speed of the Floyd-Warshall metricize. """
