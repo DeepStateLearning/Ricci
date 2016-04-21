@@ -1,4 +1,3 @@
-// Modified fully optimized ulmBLAS micro kernel
 #define MR  4
 #define NR  4
 
@@ -50,8 +49,7 @@ dgemm_micro_kernel(long kc,
 //
     for (j=0; j<NR; ++j) {
         for (i=0; i<MR; ++i) {
-            if (C[i*incRowC+j*incColC] > AB[i+j*MR])
-                C[i*incRowC+j*incColC] = AB[i+j*MR];
+            C[i*incRowC+j*incColC] = min(C[i*incRowC+j*incColC],AB[i+j*MR]);
         }
     }
 }
