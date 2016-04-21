@@ -71,11 +71,10 @@ __asm__ volatile
 	"                                            \n\t"
 	"movq      %0, %%rsi                         \n\t" // i = k_iter;
 	"testq  %%rsi, %%rsi                         \n\t" // check i via logical AND.
-	"je     .DCONSIDKLEFT                        \n\t" // if i == 0, jump to code that
-	"                                            \n\t" // contains the k_left loop.
+	"je     .DCONSIDKLEFT%=                        \n\t" // if i == 0, jump to code that
 	"                                            \n\t"
-	"                                            \n\t"
-	".DLOOPKITER:                                \n\t" // MAIN LOOP
+	"                                            \n"
+	".DLOOPKITER%=:                                \n\t" // MAIN LOOP
 	"                                            \n\t"
 	"addq         $4 * 4 * 8,  %%r15             \n\t" // b_next += 4*4 (unroll x nr)
 	"                                            \n\t"
@@ -205,22 +204,22 @@ __asm__ volatile
 	//"addq   $4 * 4 * 8, %%rbx                    \n\t" // b      += 4*4 (unroll x nr)
 	"                                            \n\t"
 	"decq   %%rsi                                \n\t" // i -= 1;
-	"jne    .DLOOPKITER                          \n\t" // iterate again if i != 0.
+	"jne    .DLOOPKITER%=                          \n\t" // iterate again if i != 0.
 	"                                            \n\t"
 	"                                            \n\t"
 	"                                            \n\t"
 	"                                            \n\t"
 	"                                            \n\t"
-	"                                            \n\t"
-	".DCONSIDKLEFT:                              \n\t"
+	"                                            \n"
+	".DCONSIDKLEFT%=:                              \n\t"
 	"                                            \n\t"
 	"movq      %1, %%rsi                         \n\t" // i = k_left;
 	"testq  %%rsi, %%rsi                         \n\t" // check i via logical AND.
-	"je     .DPOSTACCUM                          \n\t" // if i == 0, we're done; jump to end.
+	"je     .DPOSTACCUM%=                          \n\t" // if i == 0, we're done; jump to end.
 	"                                            \n\t" // else, we prepare to enter k_left loop.
 	"                                            \n\t"
-	"                                            \n\t"
-	".DLOOPKLEFT:                                \n\t" // EDGE LOOP
+	"                                            \n"
+	".DLOOPKLEFT%=:                                \n\t" // EDGE LOOP
 	"                                            \n\t"
 	"vmovapd   1 * 32(%%rax),  %%ymm1            \n\t"
 	"addq         $8 * 1 * 8,  %%rax             \n\t" // a += 8 (1 x mr)
@@ -253,11 +252,11 @@ __asm__ volatile
 	"                                            \n\t"
 	"                                            \n\t"
 	"decq   %%rsi                                \n\t" // i -= 1;
-	"jne    .DLOOPKLEFT                          \n\t" // iterate again if i != 0.
+	"jne    .DLOOPKLEFT%=                          \n\t" // iterate again if i != 0.
 	"                                            \n\t"
 	"                                            \n\t"
-	"                                            \n\t"
-	".DPOSTACCUM:                                \n\t"
+	"                                            \n"
+	".DPOSTACCUM%=:                                \n\t"
 	"                                            \n\t"
 	"                                            \n\t"
 	"                                            \n\t" // ymm15:  ymm13:  ymm11:  ymm9:
@@ -380,17 +379,17 @@ __asm__ volatile
 	"                                            \n\t"
 	//"vxorpd    %%ymm0,  %%ymm0,  %%ymm0          \n\t" // set ymm0 to zero.
 	"vucomisd  %%xmm0,  %%xmm2                   \n\t" // set ZF if beta == MAX.
-	"je      .DBETAZERO                          \n\t" // if ZF = 1, jump to beta == MAX case
+	"je      .DBETAZERO%=                          \n\t" // if ZF = 1, jump to beta == MAX case
 	"                                            \n\t"
 	"                                            \n\t"
 	"                                            \n\t" // check if aligned/column-stored
 	"andb     %%bl, %%bh                         \n\t" // set ZF if bl & bh == 1.
 	"andb     %%bh, %%al                         \n\t" // set ZF if bh & al == 1.
-	"jne     .DCOLSTORED                         \n\t" // jump to column storage case
+	"jne     .DCOLSTORED%=                         \n\t" // jump to column storage case
 	"                                            \n\t"
 	"                                            \n\t"
-	"                                            \n\t"
-	".DGENSTORED:                                \n\t"
+	"                                            \n"
+	".DGENSTORED%=:                                \n\t"
 	"                                            \n\t" // update c00:c33
 	"                                            \n\t"
 	"vextractf128 $1, %%ymm9,  %%xmm1            \n\t"
@@ -514,11 +513,11 @@ __asm__ volatile
 	"vmovhpd          %%xmm0,  (%%rdx,%%r13)     \n\t"
 	"                                            \n\t"
 	"                                            \n\t"
-	"jmp    .DDONE                               \n\t" // jump to end.
+	"jmp    .DDONE%=                               \n\t" // jump to end.
 	"                                            \n\t"
 	"                                            \n\t"
-	"                                            \n\t"
-	".DCOLSTORED:                                \n\t"
+	"                                            \n"
+	".DCOLSTORED%=:                                \n\t"
 	"                                            \n\t" // update c00:c33
 	"                                            \n\t"
 	"vmovapd    (%%rcx),       %%ymm0            \n\t" // load c00:c30,
@@ -570,20 +569,20 @@ __asm__ volatile
 	"vmovapd          %%ymm0,  (%%rdx)           \n\t" // and store back to memory.
 	"                                            \n\t"
 	"                                            \n\t"
-	"jmp    .DDONE                               \n\t" // jump to end.
+	"jmp    .DDONE%=                               \n\t" // jump to end.
 	"                                            \n\t"
 	"                                            \n\t"
 	"                                            \n\t"
-	"                                            \n\t"
-	".DBETAZERO:                                 \n\t"
+	"                                            \n"
+	".DBETAZERO%=:                                 \n\t"
 	"                                            \n\t" // check if aligned/column-stored
 	"andb     %%bl, %%bh                         \n\t" // set ZF if bl & bh == 1.
 	"andb     %%bh, %%al                         \n\t" // set ZF if bh & al == 1.
-	"jne     .DCOLSTORBZ                         \n\t" // jump to column storage case
+	"jne     .DCOLSTORBZ%=                         \n\t" // jump to column storage case
 	"                                            \n\t"
 	"                                            \n\t"
-	"                                            \n\t"
-	".DGENSTORBZ:                                \n\t"
+	"                                            \n"
+	".DGENSTORBZ%=:                                \n\t"
 	"                                            \n\t" // update c00:c33
 	"                                            \n\t"
 	"vextractf128 $1, %%ymm9,  %%xmm1            \n\t"
@@ -643,11 +642,11 @@ __asm__ volatile
 	"vmovhpd          %%xmm1,  (%%rdx,%%r13)     \n\t"
 	"                                            \n\t"
 	"                                            \n\t"
-	"jmp    .DDONE                               \n\t" // jump to end.
+	"jmp    .DDONE%=                               \n\t" // jump to end.
 	"                                            \n\t"
 	"                                            \n\t"
-	"                                            \n\t"
-	".DCOLSTORBZ:                                \n\t"
+	"                                            \n"
+	".DCOLSTORBZ%=:                                \n\t"
 	"                                            \n\t" // update c00:c33
 	"                                            \n\t"
 	"vmovapd          %%ymm9,  (%%rcx)           \n\t" // store c00:c30
@@ -677,10 +676,8 @@ __asm__ volatile
 	"                                            \n\t"
 	"                                            \n\t"
 	"                                            \n\t"
-	"                                            \n\t"
-	".DDONE:                                     \n\t"
-	"                                            \n\t"
-
+	"                                            \n"
+	".DDONE%=:                                     "
 	: // output operands (none)
 	: // input operands
 	  "m" (kb), // 0

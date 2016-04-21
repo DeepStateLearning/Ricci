@@ -2,6 +2,12 @@
 // http://www.cs.virginia.edu/~pact2006/program/pact2006/pact139_han4.pdf
 // mixed with BLIS macro kernel.
 
+// New features:
+//  - Only lower triangle of blocks is considered.
+//  - Next diagonal block is scheduled as soon as possible, since it is the slowest (real F-W algorithm)
+//  - Last diagonal block is generally smaller to handle arbitrary size matrices. 
+
+
 #include <omp.h>
 #include <stdbool.h>
 #include <stdio.h> 
@@ -9,7 +15,7 @@
 // tiles
 #define NL1 128
 // subtiles
-#define NL2 32
+//#define NL2 32
 // BLIS macro kernel uses large tiles
 #define MC NL1
 #define NC NL1
@@ -22,7 +28,7 @@
 // zero element of the semiring
 // e.g. infinity for min and plus/times
 //      0 for plus and times
-#define MAX 1e+300
+#define MAX 1000
 // unit element for reduction
 #define UNIT 1.0
 // new pointwise operation
@@ -36,25 +42,27 @@
 #include "kernel_BLIS_avx.c"
 
 // diagonal block (shared)
-static double _C[NL1*NL1] __attribute__ ((aligned (32)));
+static double _diag[NL1*NL1] __attribute__ ((aligned (32)));
 // next diagonal block
-static double _CC[NL1*NL1] __attribute__ ((aligned (32)));
-// horizontal blocks
+static double _diag2[NL1*NL1] __attribute__ ((aligned (32)));
+// horizontal blocks, also used by macro kernel
 static double _A[NL1*NL1] __attribute__ ((aligned (32)));
-// vertical blocks
+// vertical blocks, also used by macro kernel
 static double _B[NL1*NL1] __attribute__ ((aligned (32)));
-#pragma omp threadprivate(_A, _B)
+// temporary matrix for macro kernel
+static double _C[MR*NR] __attribute__ ((aligned (32)));
+#pragma omp threadprivate(_A, _B, _C)
 
 // BLIS macro kernel
 #include "macro.c"
 
 /*
-static void show(const double *M, int n)
+static void show(const double *M, int rows, int cols, int n)
 {
     int i, j;
-    for (i=0; i<n;i++)
+    for (i=0; i<rows;i++)
     {
-        for (j=0; j<n;j++)
+        for (j=0; j<cols;j++)
             printf("%.2f ", M[i*n+j]);
         printf("\n");
     }
@@ -66,18 +74,20 @@ static void show(const double *M, int n)
 // versions of Floyd-Warshall on up to three matrices
 // 
 
-// C <- min(C, C+C)
-static void fwC(double *C, int n)
+static void diagonal(double *diag, int n)
 {
+    // Update a diagonal block
+    // diag += diag*diag
+    // FIXME update lower triangle, then copy results 
     int i, j, k;
     for (k=0;k<n;k++)
         for (i=0;i<n;i++)
         {
-            double c = C[i*n+k];
+            double d = diag[i*n+k];
             for (j=0;j<n;j++)
             {
-                double s = add(c, C[k*n+j]);
-                C[i*n+j] = min(C[i*n+j], s);
+                double s = add(d, diag[k*n+j]);
+                diag[i*n+j] = min(diag[i*n+j], s);
             }
         }
 }
@@ -104,35 +114,38 @@ static void fwCc(double *C, int n)
 }
 */
 
-// C <- min(C, A+C)
-// FIXME pack A by columns
-static void fwACC(const double *A, double *C, int n)
+static void horizontal(const double *diag, double *horz, int rows, int n)
 {
+    // Update a block from the same row as the current diagonal block
+    // horz += diag*horz
+    // The horizontal block may have small number of rows, so the diag is also smaller
     int i, j, k;
-    for (k=0;k<n;k++)
-        for (i=0;i<n;i++)
+    for (k=0;k<rows;k++)
+        for (i=0;i<rows;i++)
         {
-            double a = A[i*n+k];
+            double d = diag[i*rows+k];
             for (j=0;j<n;j++)
             {
-                double s = add(a, C[k*n+j]);
-                C[i*n+j] = min(C[i*n+j], s);
+                double s = add(d, horz[k*n+j]);
+                horz[i*n+j] = min(horz[i*n+j], s);
             }
         }
 }
 
-// C <- min(C, C+B) 
-static void fwCBC(const double *B, double *C, int n)
+static void vertical(const double *diag, double *vert, int rows, int n)
 {
+    // Update a block from the same column as the current diagonal block
+    // vert += vert*diag 
+    // The vertical block may have small number of rows
     int i, j, k;
     for (k=0;k<n;k++)
-        for (i=0;i<n;i++)
+        for (i=0;i<rows;i++)
         {
-            double c = C[i*n+k];
+            double v = vert[i*n+k];
             for (j=0;j<n;j++)
             {
-                double s = add(c, B[k*n+j]);
-                C[i*n+j] = min(C[i*n+j], s);
+                double s = add(v, diag[k*n+j]);
+                vert[i*n+j] = min(vert[i*n+j], s);
             }
         }
 }
@@ -155,12 +168,12 @@ void fwABC(const double *A, const double *B, double *C, int n, int full_n)
 */
 
 // move a block into contiguous memory
-static void pack(double* _M, const double* M, int n)
+static void pack(double* _M, const double* M, int rows, int cols, int n)
 {
     int i, j;
-    for (i=0;i<NL1;i++)
-        for (j=0;j<NL1;j++)
-            _M[i*NL1+j] = M[i*n+j];
+    for (i=0;i<rows;i++)
+        for (j=0;j<cols;j++)
+            _M[i*cols+j] = M[i*n+j];
 }
 
 /*
@@ -174,101 +187,143 @@ void pack_col(double* _M,const  double* M, int n)
 */
 
 // move a block back to its place 
-static void unpack(const double* _M, double* M, int n)
+static void unpack(const double* _M, double* M, int rows, int cols, int n)
 {
     int i, j;
-    for (i=0;i<NL1;i++)
-        for (j=0;j<NL1;j++)
-            M[i*n+j] = _M[i*NL1+j];
+    for (i=0;i<rows;i++)
+        for (j=0;j<cols;j++)
+            M[i*n+j] = _M[i*cols+j];
 }
 
 void fw(double *d, const int n)
 {
-    const int m = n/NL1; // number of blocks
+    const int m = (n+NL1-1)/NL1; // number of blocks
+    // The last diagonal block might be smaller
+    // It has this many rows:
+    const int small = n % NL1; 
+    // If small > 0 we may be dealing with the last, smaller block
 #ifdef NUMCORE
     int numcore = NUMCORE;
 #else
     int numcore = omp_get_max_threads();
 #endif
     // first diagonal block
-    pack(_C, d, n);
-    fwC(_C, NL1);
-    unpack(_C, d, n);
+    int cols, rows, reduction;
+    // It might be small if the whole matrix is small
+    rows = n < NL1 ? small : NL1;
+    pack(_diag, d, rows, rows, n);
+    diagonal(_diag, rows);
+    unpack(_diag, d, rows, rows, n);
+    if (n < NL1) return;
     int i, j, k;
+
     for (k=0;k<m;k++)
     {
-        // diagonal block already in _C
-#pragma omp parallel default(none) shared(_C, _CC, k, d) private(i, j) num_threads(numcore)
-{
+        // diagonal block already in _diag
+#pragma omp parallel default(none) shared(_diag, _diag2, k, d) private(i, j, rows, cols, reduction) num_threads(numcore)
 #pragma omp single
  {
         // (k, k+1), (k+1, k) and (k+1, k+1) - new diagonal as soon as possible
-        // FIXME how to force it to run as sson as possible after its dependencies?
         if (k+1<m)
         {
-#pragma omp task depend(out:d[(k*n+k+1)*NL1])
+            // FIXME
+            // k+1 -> always vertical
+            // diagonal based on vertical and transpose of vertical
+            // these two could be run by one thread ensuring diagonal is done quickly
+            // 
+            // We might be working on the last, small row
+            rows = ((k+1 < m-1) || (small == 0)) ? NL1 : small;
+#pragma omp task depend(inout:d[((k+1)*n+k)*NL1])
   {
-            // horizontal in _B, diagonal already in _C
-            pack(_B, &d[(k*n+k+1)*NL1], n);
-            fwACC(_C, _B, NL1);
-            unpack(_B, &d[(k*n+k+1)*NL1], n);
+            // vertical in _A, diagonal already in _diag
+            pack(_A, &d[((k+1)*n+k)*NL1], rows, NL1, n);
+            vertical(_diag, _A, rows, NL1);
+            unpack(_A, &d[((k+1)*n+k)*NL1], rows, NL1, n);
   }
-#pragma omp task depend(out:d[((k+1)*n+k)*NL1])
-  {
-            // vertical in _A, diagonal already in _C
-            pack(_A, &d[((k+1)*n+k)*NL1], n);
-            fwCBC(_C, _A, NL1);
-            unpack(_A, &d[((k+1)*n+k)*NL1], n);
-  }
-#pragma omp task depend(in:d[(k*n+k+1)*NL1], d[((k+1)*n+k)*NL1])
-  {
-            pack_B(NL1, NL1, &d[(k*n+k+1)*NL1], n, 1, _B);
-            pack_A(NL1, NL1, &d[((k+1)*n+k)*NL1], n, 1, _A);
-            dgemm_macro_kernel(NL1, NL1, NL1, &d[((k+1)*n+k+1)*NL1], n, 1);
+            
+            // now update (k+1, k+1) and run the next diagonal element
+#pragma omp task depend(in:d[((k+1)*n+k)*NL1])
+  {            
+            pack_A(rows, NL1, &d[((k+1)*n+k)*NL1], n, 1, _A);
+            pack_B(NL1, rows, &d[((k+1)*n+k)*NL1], 1, n, _B); // transposed A
+            dgemm_macro_kernel(rows, rows, NL1, &d[((k+1)*n+k+1)*NL1], 1, n);
             // We can run the next diagonal element
-            // Can't be placed in _C yet
-            pack(_CC, &d[((k+1)*n+k+1)*NL1], n);
-            fwC(_CC, NL1);
-            unpack(_CC, &d[((k+1)*n+k+1)*NL1], n);
+            // Can't be placed in _diag yet
+            pack(_diag2, &d[((k+1)*n+k+1)*NL1], rows, rows, n);
+            diagonal(_diag2, rows);
+            unpack(_diag2, &d[((k+1)*n+k+1)*NL1], rows, rows, n);
   }
         }
-        for (j=0;j<m;j++)
+        // j < k -> horizontal
+        // If k==m-1, we might be updating the last smller row
+        rows = ((k < m-1) || (small == 0)) ? NL1 : small;
+        for (j=0;j<k;j++)
         {
-            if ((j==k) || (j==k+1)) continue;
-#pragma omp task depend(out:d[(k*n+j)*NL1])
+#pragma omp task depend(inout:d[(k*n+j)*NL1])
   {
-            // horizontal in _B, diagonal already in _C
-            pack(_B, &d[(k*n+j)*NL1], n);
-            fwACC(_C, _B, NL1);
-            unpack(_B, &d[(k*n+j)*NL1], n);
-  }
-#pragma omp task depend(out:d[(j*n+k)*NL1])
-  {
-            // vertical in _A, diagonal already in _C
-            pack(_A, &d[(j*n+k)*NL1], n);
-            fwCBC(_C, _A, NL1);
-            unpack(_A, &d[(j*n+k)*NL1], n);
+            // horizontal in _B, diagonal already in _diag
+            pack(_B, &d[(k*n+j)*NL1], rows, NL1, n);
+            horizontal(_diag, _B, rows, NL1);
+            unpack(_B, &d[(k*n+j)*NL1], rows, NL1, n);
   }
         }
+        // j > k -> vertical (k+1 already done)
+        for (j=k+2;j<m;j++)
+        {
+            // The last vertical might be small.
+            rows = ((j < m-1) || (small == 0)) ? NL1 : small;
+#pragma omp task depend(inout:d[(j*n+k)*NL1])
+  {
+            // vertical in _A, diagonal already in _diag
+            pack(_A, &d[(j*n+k)*NL1], rows, NL1, n);
+            vertical(_diag, _A, rows, NL1);
+            unpack(_A, &d[(j*n+k)*NL1], rows, NL1, n);
+  }
+        }
+        
         for (i=0;i<m;i++)
         {
             if (i==k) continue;
-            for (j=0;j<m;j++)
+            // only lower triangle with diagonal (j<=i)
+            for (j=0;j<=i;j++)
             {
                 if (j==k) continue;
                 if ((j==k+1) && (i==k+1)) continue;
-#pragma omp task depend(in:d[(k*n+j)*NL1], d[(i*n+k)*NL1])
+                int indexA = j<k ? (k*n+j)*NL1 : (j*n+k)*NL1;
+                int indexB = i<k ? (k*n+i)*NL1 : (i*n+k)*NL1;
+                // The last row might be small
+                rows = ((i < m-1) || (small == 0)) ? NL1 : small;
+                // The last column might be small
+                cols = ((j < m-1) || (small == 0)) ? NL1 : small;
+                // Large tile can be updated from the last small row
+                reduction = ((k<m-1) || (small == 0)) ? NL1 : small;
+#pragma omp task depend(in:d[indexA], d[indexB]) 
   {
                 // other blocks
-                pack_B(NL1, NL1, &d[(k*n+j)*NL1], n, 1, _B);
-                pack_A(NL1, NL1, &d[(i*n+k)*NL1], n, 1, _A);
-                dgemm_macro_kernel(NL1, NL1, NL1, &d[(i*n+j)*NL1], n, 1);
+                // multiplication of transposed matrices to get column order
+                // AVX kernel is slightly faster this way
+                // also make sure to use only lower triangle (by matrix symmetry)
+                // 1, n -> n, 1 in pack_* switches from column to row storage (transposes)
+                // transposed horizontal block
+                if (j<k)
+                    pack_A(NL1, reduction, &d[indexA], 1, n, _A);
+                else
+                    pack_A(cols, reduction, &d[indexA], n, 1, _A);
+                // transposed vertical block
+                if (i<k)
+                    pack_B(reduction, NL1, &d[indexB], n, 1, _B);
+                else
+                    pack_B(reduction, rows, &d[indexB], 1, n, _B);
+                dgemm_macro_kernel(cols, rows, reduction, &d[(i*n+j)*NL1], 1, n);
   }
             }
         }
  } // single
-} // parallel
     for (i=0;i<NL1*NL1;i++)
-        _C[i] = _CC[i];
+        _diag[i] = _diag2[i];
     }           
+    // copy lower triangle to upper triangle
+    for (i=0;i<n;i++)
+        for (j=0;j<i;j++)
+            d[j*n+i] = d[i*n+j];
 }

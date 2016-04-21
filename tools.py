@@ -59,8 +59,7 @@ def graph(threshold, pointset, sqdist, ax, dim, mode="sort"):
     Distances are measured between representatives of the component, so close
     components may end up having large distance.
     """
-    c = np.zeros(len(pointset), dtype=int)
-    num = components(sqdist, 0.001, c)
+    num, c = components(sqdist, 0.001)
     print "Number of components: ", num
     # now c contains uniquely numbered components
 
@@ -90,137 +89,81 @@ def graph(threshold, pointset, sqdist, ax, dim, mode="sort"):
     plt.pause(0.01)
     return num
 
-
-def build_fastmath_extension():
-    """
-    Build fastmath C/C++ extension.
-
-    Requires fast-math, which impacts accuracy, but can be very fast.
-
-    Metricize from this module is much faster than fully optimized SSE BLIS
-    on processors with AVX.
-    """
-    from scipy.weave import ext_tools
-    import os
-    import mkl
-    ncpus = mkl.get_max_threads()
-    os.system("OMP_NUM_THREADS={} make -C cpp/ libgenmul_pureC.so libfw.so"
-              .format(ncpus))
-    mod = ext_tools.ext_module('ctools_fastmath')
-    # number of physical cpus/core
-    # type declarations
-    d = np.zeros((2, 2))
-    d2 = np.zeros((2, 2))
-    limit = 4
-
-    # metricize using Floyd-Warshall
-    func = ext_tools.ext_function('metricize_fw', "fw(d, Nd[0]);", ['d'])
-    mod.add_function(func)
-
-    # metricize via BLIS dgemm
-    with open('cpp/metricize_dgemm.c', 'r') as f:
-        code = f.read()
-    func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2', 'limit'])
-    mod.add_function(func)
-
-    # mod.customize.add_header('<omp.h>')
-    mod.customize.add_header('<cmath>')
-    # mod.customize.add_header('<x86intrin.h>')
-    mod.customize.add_header('"cpp/genmul.h"')
-    mod.customize.add_header('"cpp/floyd_warshall.h"')
-    mod.compile(extra_compile_args=["-O3 -DNUMCORE={}".format(ncpus),
-                                    "-fopenmp -march=native",
-                                    "-fomit-frame-pointer", "-ffast-math",
-                                    "-mfpmath=sse",
-                                    "-Wno-unused-variable",
-                                    "-ftree-vectorize"],
-                verbose=2,
-                libraries=['gomp', 'genmul_pureC', 'fw'],
-                )
-    os.system("rm *.cpp")
-
-
-def build_extension():
-    """
-    Build C/C++ extension module ctools.
-
-    Contains:
-        - metricize with fully parallelized triangular loop
-        - somewhat random metricize
-        - connected components
-        - clustered check
-    """
-    from scipy.weave import ext_tools
-    import os
-    import mkl
-    ncpus = mkl.get_max_threads()
-    os.system("OMP_NUM_THREADS={} make -C cpp/ libgenmul.so".format(ncpus))
-    mod = ext_tools.ext_module('ctools')
-    # number of physical cpus
-    print "Number of physical cores: ", ncpus
-    # type declarations
-    d = np.zeros((2, 2))
-    d2 = np.zeros((2, 2))
-    threshold = 0.5
-    limit = 4
-    colors = np.zeros(2, dtype=int)
-
-    # find connected components and number them
-    # fills last argument with component numbers for vertices
-    # returns number of components
-    with open('cpp/components.cpp', 'r') as f:
-        code = f.read()
-    func = ext_tools.ext_function('components', code,
-                                  ['d', 'threshold', 'colors'])
-    mod.add_function(func)
-
-    # check if clustered function
-    with open('cpp/clustered.cpp', 'r') as f:
-        support_code = f.read()
-    func = ext_tools.ext_function('clustered', """
-    return_val = clustered_depthfirst(Nd[0], threshold, d);
-    """, ['d', 'threshold'])
-    func.customize.add_support_code(support_code)
-    mod.add_function(func)
-
-    # metricize via BLIS framework
-    with open('cpp/metricize_dgemm.c', 'r') as f:
-        code = f.read()
-    func = ext_tools.ext_function('metricize_gemm', code, ['d', 'd2', 'limit'])
-    func.customize.add_support_code(support_code)
-    mod.add_function(func)
-    mod.customize.add_header('<omp.h>')
-    mod.customize.add_header('<vector>')
-    mod.customize.add_header('<cmath>')
-    mod.customize.add_header('<x86intrin.h>')
-    mod.customize.add_header('"cpp/genmul.h"')
-    mod.compile(extra_compile_args=["-O3 -DNUMCORE={}".format(ncpus),
-                                    "-fopenmp -march=native",
-                                    "-fomit-frame-pointer",
-                                    "-mfpmath=sse",
-                                    "-Wno-unused-variable"],
-                verbose=2,
-                libraries=['gomp', 'genmul'],
-                )
-    os.system("rm *.cpp")
-
-
-import os
+import ctypes
 try:
-    import ctools
-    import ctools_fastmath
+    _libfw = ctypes.cdll.LoadLibrary("./libfw.so")
+    _libgenmul = ctypes.cdll.LoadLibrary("./libgenmul.so")
+    _libgenmul_pure = ctypes.cdll.LoadLibrary("./libgenmul_pureC.so")
+    _libgraph = ctypes.cdll.LoadLibrary("./libgraph.so")
 except:
-    # might have been built on a different machine
-    # try rebuilding
-    os.system("rm ctools*")
-    os.system("cd cpp && make clean && cd ..")
-    build_fastmath_extension()
-    build_extension()
-    import ctools
-    import ctools_fastmath
+    import os
+    import mkl
+    ncpus = mkl.get_max_threads()
+    os.system("make clean && OMP_NUM_THREADS={} make".format(ncpus))
+    _libfw = ctypes.cdll.LoadLibrary("./libfw.so")
+    _libgenmul = ctypes.cdll.LoadLibrary("./libgenmul.so")
+    _libgenmul_pure = ctypes.cdll.LoadLibrary("./libgenmul_pureC.so")
+    _libgraph = ctypes.cdll.LoadLibrary("./libgraph.so")
 
 
-def metricize_fw(dist):
+# fix argument types
+from numpy.ctypeslib import ndpointer
+_libfw.fw.restype = None
+_libfw.fw.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                    ctypes.c_size_t]
+
+_libgenmul.metricize.restype = None
+_libgenmul.metricize.argtypes =[
+    ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+    ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+    ctypes.c_size_t, ctypes.c_int]
+
+_libgenmul_pure.metricize_pure.restype = None
+_libgenmul_pure.metricize_pure.argtypes =[
+    ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+    ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+    ctypes.c_size_t, ctypes.c_int]
+
+_libgraph.components.restype = ctypes.c_int
+_libgraph.components.argtypes =[
+    ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+    ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+    ctypes.c_size_t, ctypes.c_double]
+_libgraph.clustered.restype = ctypes.c_bool
+_libgraph.clustered.argtypes =[
+    ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+    ctypes.c_size_t, ctypes.c_double]
+
+def floyd_warshall(dist):
+    """
+    All-pairs shortest distance in min-mul semiring.
+
+    Using Floyd-Warshall algorithm.
+    """
+    _libfw.fw(dist, len(dist))
+
+def metricize_gemm(dist, temp, limit):
+    """
+    All-pairs shortest distance in min-mul semiring.
+
+    Using repeated matrix multiplication. Requires a temporary array.
+
+    Assembly and AVX BLIS micro kernel.
+    """
+    _libgenmul.metricize(dist, temp, len(dist), limit)
+
+def metricize_gemm_pureC(dist, temp, limit):
+    """
+    All-pairs shortest distance in min-mul semiring.
+
+    Using repeated matrix multiplication. Requires a temporary array.
+
+    Plain C BLIS micro kernel.
+    """
+    _libgenmul_pure.metricize_pure(dist, temp, len(dist), limit)
+
+
+def metricize_fw(dist, temp=None):
     """
     Metricize a matrix of "squared distances".
 
@@ -232,11 +175,12 @@ def metricize_fw(dist):
     # We use subtropical matrix multiplication since it is faster
     # Starting with Skylake the tropical one will be as fast
     ne.evaluate('exp(sqrt(dist))', out=dist)
-    ctools_fastmath.metricize_fw(dist)
+    floyd_warshall(dist)
     ne.evaluate('log(dist)**2', out=dist)
 
+metricize = metricize_fw
 
-def metricize(dist, temp=None, limit=0):
+def metricize_mul(dist, temp=None, limit=0):
     """
     Metricize based on BLIS framework for BLAS.
 
@@ -250,7 +194,7 @@ def metricize(dist, temp=None, limit=0):
     # Starting with Skylake the tropical one will be as fast
     ne.evaluate('exp(sqrt(dist))', out=dist)
     np.copyto(temp, dist)
-    ctools.metricize_gemm(dist, temp, limit=4)
+    metricize_gemm(dist, temp, limit=4)
     ne.evaluate('log(dist)**2', out=dist)
 
 
@@ -266,18 +210,20 @@ def metricize_pureC(dist, temp=None, limit=0):
     # Starting with Skylake the tropical one will be as fast
     ne.evaluate('exp(sqrt(dist))', out=dist)
     np.copyto(temp, dist)
-    ctools_fastmath.metricize_gemm(dist, temp, limit)
+    metricize_gemm_pureC(dist, temp, limit)
     ne.evaluate('log(dist)**2', out=dist)
 
 
-def components(dist, threshold, colors):
+def components(dist, threshold):
     """
     Find connected components based on closeness threshold.
 
     Returns number of components and fills colors array with
     numbers (colors) for vertices.
     """
-    return ctools.components(dist, threshold, colors)
+    c = np.zeros(len(dist), dtype=np.int32)
+    num = _libgraph.components(dist, c, len(dist), threshold)
+    return num, c
 
 
 def sanitize(sqdist, how='L_inf', clip=np.inf, norm=1.0, temp=None):
@@ -328,32 +274,12 @@ def is_clustered(sqdist, threshold):
 
     Implemented in C++ using modified depth first connected component search.
     """
-    return ctools.clustered(sqdist, threshold)
+    return _libgraph.clustered(sqdist, len(sqdist), threshold)
 
 
 def color_clusters(sqdist, threshold):
     """Assuming the metric is clustered, return a colored array."""
-    # FIXME This is done by components?
-    n = len(sqdist)
-    partition = (sqdist < threshold)
-    clust = np.zeros(n, dtype=int)
-    for i in range(n):
-        for j in range(n):
-            if partition[i, j]:
-                clust[i] = j
-                break
-    clust_set = set(clust)
-    map = np.zeros(n, dtype=int)
-    count = 0
-    for i in range(n):
-        map[i] = count
-        if i in clust_set:
-            count += 1
-
-    for i in range(n):
-        clust[i] = map[clust[i]]
-
-    return clust
+    return components(sqdist, threshold)[1]
 
 
 import unittest
@@ -367,7 +293,7 @@ class ToolsTests (unittest.TestCase):
         """ Check if different methods give the same result. """
         threshold = 1E-10
         print
-        for n in [640, 1280]*3:
+        for n in range(1, 1040, 13):
             d = np.random.rand(n, n)
             d = d + d.T
             np.fill_diagonal(d, 0)
@@ -375,20 +301,22 @@ class ToolsTests (unittest.TestCase):
             d3 = d.copy()
             f(d)
             g(d2)
+            print "Size : {0}x{0}".format(n)
+            self.assertTrue(is_metric(d))
+            self.assertTrue(is_metric(d2))
             print "Changed entries: {} out of {}." \
                 .format(n*n - np.isclose(d, d3).sum(), n*n)
             error = np.max(np.abs(d-d2))
             print "Absolute difference between methods: ", error
             self.assertLess(error, threshold)
-            self.assertTrue(is_metric(d))
 
     def test_metricize_pureC(self):
         """ Test optimized BLIS metricize against pure C BLIS metricize. """
-        self.correct(metricize, metricize_pureC)
+        self.correct(metricize_mul, metricize_pureC)
 
     def test_metricize_fw(self):
         """ Test Floyd-Warshall metricize against optimized BLIS metricize. """
-        self.correct(metricize, metricize_fw)
+        self.correct(metricize_mul, metricize_fw)
 
     def speed(self, f, s=640):
         """ Test speed on larger data sets. """
@@ -402,7 +330,7 @@ class ToolsTests (unittest.TestCase):
 
     def test_speed_metricize(self):
         """ Speed of the optimized BLIS metricize. """
-        self.speed(metricize)
+        self.speed(metricize_mul)
 
     def test_speed_metricize_pureC(self):
         """ Speed of the pureC  BLIS metricize. """
@@ -418,7 +346,7 @@ if __name__ == "__main__":
     unittest.TextTestRunner(verbosity=2).run(suite)
     exit(0)
     from datetime import datetime
-    n = 512
+    n = 33
     A = np.random.rand(n, n)
     A = A + A.T
     np.fill_diagonal(A, 0.0)
@@ -431,6 +359,7 @@ if __name__ == "__main__":
     # add_AB_to_C(B, B, D)
     metricize(B)
     print datetime.now()-start
+    print np.where(np.abs(A-B)>10e-10)
     # start = datetime.now()
     # metricize5b(A, C)
     # print datetime.now()-start

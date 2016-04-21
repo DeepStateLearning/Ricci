@@ -5,7 +5,11 @@
 extern "C" {
 #endif
 
+#if defined __FAST_MATH__
+extern void dgemm_pure(int n, const double* A, double* C);
+#else
 extern void dgemm_nn(int n, const double* A, double* C);
+#endif
 
 #ifdef __cplusplus
 }

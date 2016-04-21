@@ -11,7 +11,7 @@
 // zero element of the semiring
 // e.g. infinity for min and plus/times
 //      0 for plus and times
-#define MAX 1e+300
+#define MAX 1000
 // unit element for reduction
 #define UNIT 1.0
 // new pointwise operation

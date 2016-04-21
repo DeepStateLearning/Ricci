@@ -33,10 +33,17 @@
 //
 //  Compute C <- C + A*B
 //
+#if defined __FAST_MATH__
+void
+dgemm_pure(int            n,
+         const double   *A,
+         double         *C)
+#else
 void
 dgemm_nn(int            n,
          const double   *A,
          double         *C)
+#endif
 {
     int m = n, k = n;
     int mb = (m+MC-1) / MC;

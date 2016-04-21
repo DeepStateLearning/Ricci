@@ -10,7 +10,7 @@ np.seterr(all="print")  # divide='raise', invalid='raise')
 #
 runs = 2000  # how many iterations
 show = 20  # how frequently we show the result
-eta = 0.0075  # factor of Ricci that is added to distance squared
+eta = 0.0015  # factor of Ricci that is added to distance squared
 # do not cluster if distances in ambiguity interval (threshold, upperthreshold)
 threshold = 0.0001  # clustering threshold
 # upperthreshold = 0.3
@@ -40,8 +40,8 @@ import data
 
 
 # sqdist, pointset = data.two_clusters(35, 25, 2, dim=2)
-# sqdist, pointset = data.noisymoons(500, noise)
-sqdist, pointset = data.two_clusters(500, 250, 7)
+sqdist, pointset = data.noisymoons(1000, noise)
+# sqdist, pointset = data.two_clusters(500, 250, 7)
 # sqdist, pointset = data.perm_circles_200()
 # sqdist, pointset = data.four_clusters_3d(100,7)
 dim = len(pointset[0])
